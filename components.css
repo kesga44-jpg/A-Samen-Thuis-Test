@@ -480,3 +480,8 @@
 html[data-appearance="minimal"] .daily-quote { font-weight: 600; }
 html[data-appearance="minimal"] .shortcut-card { box-shadow: none; }
 @media(max-width:700px) { .shortcut-row { grid-template-columns: 1fr; } }
+
+.car-dashboard-grid{grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr)}
+.car-profile-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}.car-profile-grid>div,.car-date-labels>div{padding:14px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper-soft)}.car-profile-grid small,.car-date-labels small{display:block;color:var(--muted);margin-bottom:5px}.car-profile-grid strong,.car-date-labels strong{display:block}.car-date-labels{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}.car-form{margin-top:4px}
+@media(max-width:850px){.car-dashboard-grid,.car-profile-grid{grid-template-columns:1fr 1fr}.car-date-labels{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.car-dashboard-grid,.car-profile-grid,.car-date-labels{grid-template-columns:1fr}}
