@@ -4,6 +4,33 @@ const pageTitles = {today:'Vandaag',agenda:'Agenda',tasks:'Taken',challenges:'Ch
 const PEOPLE = ['Kees','Daphne','Samen'];
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 const todayKey = () => new Date().toISOString().slice(0,10);
+const dailyQuotes = [
+  'Je hoeft niet alles vandaag te doen. Begin met één kleine stap.',
+  'Een fijn thuis ontstaat door kleine dingen die je samen blijft doen.',
+  'Vooruitgang is niet altijd groot; soms is het gewoon blijven proberen.',
+  'Maak ruimte voor wat belangrijk is, niet alleen voor wat dringend is.',
+  'Aandacht is een kleine moeite met een groot effect.',
+  'Samen hoeft niet perfect te zijn. Samen is al waardevol.',
+  'Rust is ook iets wat je bewust kunt plannen.',
+  'Een gewoon moment kan bijzonder worden als je er aandacht aan geeft.',
+  'Kleine gewoontes maken het leven lichter.',
+  'Je hoeft niet dezelfde dag te hebben om elkaar toch te begrijpen.'
+];
+const dailyQuestions = [
+  'Wat zou vandaag voor jou een fijne dag maken?',
+  'Waar ben je deze week trots op, groot of klein?',
+  'Wat kunnen we vandaag doen om elkaar wat makkelijker te helpen?',
+  'Welk klein moment samen wil je deze week graag creëren?',
+  'Wat geeft jou op dit moment de meeste rust?',
+  'Welke gewoonte zouden we samen graag wat vaker willen doen?',
+  'Wat waardeer je op dit moment aan de ander?',
+  'Wat wil je deze week graag afronden zodat er meer ruimte ontstaat?',
+  'Welke plek of activiteit geeft jou direct een goed gevoel?',
+  'Wat is iets kleins waar we ons vandaag op kunnen verheugen?',
+  'Wat zou je graag eens samen willen leren of proberen?',
+  'Wanneer voelde je je de afgelopen tijd echt gesteund?'
+];
+function dailyIndex(list){const d=new Date();const start=new Date(d.getFullYear(),0,0);const day=Math.floor((d-start)/86400000);return day%list.length}
 
 function defaultState(){
   return {version:2,currentPage:'today',theme:'light',appearance:'normal',minimalColor:'#315f86',focus:'',tasks:[
@@ -13,7 +40,7 @@ function defaultState(){
     {id:uid(),title:'3× bewegen deze week',category:'Sport',target:3,progress:1,points:50,done:false},
     {id:uid(),title:'30 minuten lezen',category:'Lezen',target:1,progress:0,points:20,done:false},
     {id:uid(),title:'Samen iets leuks doen',category:'Samen',target:1,progress:0,points:30,done:false}
-  ],programs:[],deals:[],meals:[],groceries:[],stock:[],home:[],budget:{monthly:0,spent:0,items:[]},dates:[],travel:[],extras:[],notifications:true,history:[]};
+  ],programs:[],deals:[],meals:[],groceries:[],stock:[],home:[],budget:{monthly:0,spent:0,items:[]},dates:[],travel:[],extras:[],dailyAnswers:{},notifications:true,history:[]};
 }
 function loadState(){try{const raw=localStorage.getItem(STORAGE_KEY);return raw?merge(defaultState(),JSON.parse(raw)):defaultState()}catch{return defaultState()}}
 function merge(base,saved){return {...base,...saved,tasks:Array.isArray(saved.tasks)?saved.tasks:base.tasks,challenges:Array.isArray(saved.challenges)?saved.challenges:base.challenges,programs:Array.isArray(saved.programs)?saved.programs:base.programs,deals:Array.isArray(saved.deals)?saved.deals:base.deals}}
@@ -27,10 +54,19 @@ function renderPage(page){({today:renderToday,tasks:renderTasksPage,challenges:r
 function personAvatar(person){return person==='Daphne'?'D':person==='Samen'?'S':'K'}
 function taskMarkup(task,index){return `<li class="task-row ${task.done?'is-done':''}" draggable="true" data-id="${task.id}" data-index="${index}"><span class="drag">⠿</span><input class="task-check" type="checkbox" ${task.done?'checked':''} aria-label="${esc(task.text)}"><span class="avatar avatar-${task.person==='Daphne'?'purple':task.person==='Samen'?'green':'blue'}">${personAvatar(task.person)}</span><span class="task-label"><strong>${esc(task.text)}</strong><small>${esc(task.category)} · ${esc(task.person)}${task.due?` · ${esc(task.due)}`:''}</small></span><button class="icon-button task-delete" aria-label="Taak verwijderen">×</button></li>`}
 function renderToday(){
+  const today=todayKey();
+  $('#today-date-label').textContent=new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long'});
+  $('#daily-quote').textContent='“'+dailyQuotes[dailyIndex(dailyQuotes)]+'”';
+  $('#daily-question').textContent=dailyQuestions[dailyIndex(dailyQuestions)];
+  if($('#daily-answer'))$('#daily-answer').value=(state.dailyAnswers||{})[today]||'';
+  if($('#daily-answer-status'))$('#daily-answer-status').textContent=(state.dailyAnswers||{})[today]?'Antwoord van vandaag is bewaard.':'Je antwoord blijft lokaal bewaard.';
   $('#focus-current').textContent=state.focus||'Nog geen focus gekozen.';$('#focus-current').classList.toggle('empty-state',!state.focus);
   const open=state.tasks.filter(t=>!t.done);$('#task-list').innerHTML=open.slice(0,5).map(taskMarkup).join('')||'<li class="empty-row">Geen openstaande taken 🎉</li>';$('#task-count').textContent=`${open.length} openstaande taak${open.length===1?'':'taken'}`;
-  $('#today-stats').innerHTML=`<article class="stat-tile"><span>Open taken</span><strong>${open.length}</strong><small>${state.tasks.length?`${state.tasks.filter(t=>t.done).length} afgerond`: 'Nog niets afgerond'}</small></article><article class="stat-tile"><span>Challenges</span><strong>${state.challenges.filter(c=>c.done).length}/${state.challenges.length}</strong><small>${state.challenges.reduce((a,c)=>a+c.progress*c.points/c.target,0).toFixed(0)} punten in opbouw</small></article>`;
-  const deals=state.deals.filter(d=>(!d.valid||d.valid>=todayKey())&&state.groceries.some(g=>!g.done&&(g.name.toLowerCase().includes(d.product.toLowerCase())||d.product.toLowerCase().includes(g.name.toLowerCase()))));$('#today-deals').innerHTML=deals.length?deals.map(d=>`<div class="list-card"><div><strong>${esc(d.product)} · € ${Number(d.price).toFixed(2)}</strong><small>${esc(d.store)} · geldig t/m ${esc(d.valid||'onbekend')}</small></div><button class="button button-secondary button-small" data-page-link="deals">Bekijken</button></div>`).join(''):'<div class="empty-row">Nog geen matches met jullie boodschappenlijst.</div>';
+  $('#today-stats').innerHTML=`<article class="stat-tile"><span>Open taken</span><strong>${open.length}</strong><small>${state.tasks.length?`${state.tasks.filter(t=>t.done).length} afgerond`: 'Nog niets afgerond'}</small></article><article class="stat-tile"><span>Challenges</span><strong>${state.challenges.filter(c=>c.done).length}/${state.challenges.length}</strong><small>${state.challenges.reduce((a,c)=>a+(Number(c.progress||0)*Number(c.points||0)/Math.max(1,Number(c.target||1))),0).toFixed(0)} punten in opbouw</small></article>`;
+  const challenge=state.challenges.find(c=>!c.done)||state.challenges[0];$('#today-challenge').innerHTML=challenge?`<div class="dashboard-challenge"><span class="tag">${esc(challenge.category||'Challenge')}</span><h3>${esc(challenge.title)}</h3><div class="progress"><span style="width:${Math.min(100,Number(challenge.progress||0)/Math.max(1,Number(challenge.target||1))*100)}%"></span></div><div class="row-between"><small>${Number(challenge.progress||0)}/${Number(challenge.target||1)} keer · ${Number(challenge.points||0)} punten</small><button class="button button-primary button-small challenge-progress" data-id="${challenge.id}">${challenge.progress>=challenge.target?'Voltooid ✓':'Check-in'}</button></div></div>`:'<div class="empty-row">Nog geen challenges. Voeg er een toe op de Challenges-pagina.</div>';
+  const agenda=state.agenda.filter(a=>!a.date||a.date>=today).sort((a,b)=>(a.date||'').localeCompare(b.date||'')).slice(0,3);$('#today-agenda').innerHTML=agenda.length?agenda.map(a=>`<div class="list-card"><div><strong>${esc(a.title)}</strong><small>${a.date?new Date(a.date+'T12:00').toLocaleDateString('nl-NL',{weekday:'short',day:'numeric',month:'short'}):'Datum niet ingesteld'} · ${esc(a.person||'Samen')}</small></div></div>`).join(''):'<div class="empty-row">Geen komende afspraken ingevoerd.</div>';
+  $('#dashboard-grocery-count').textContent=`${state.groceries.filter(g=>!g.done).length} producten op de lijst`;
+  const deals=state.deals.filter(d=>(!d.valid||d.valid>=today)&&state.groceries.some(g=>!g.done&&(g.name.toLowerCase().includes(d.product.toLowerCase())||d.product.toLowerCase().includes(g.name.toLowerCase()))));$('#today-deals').innerHTML=deals.length?deals.map(d=>`<div class="list-card"><div><strong>${esc(d.product)} · € ${Number(d.price).toFixed(2)}</strong><small>${esc(d.store)} · geldig t/m ${esc(d.valid||'onbekend')}</small></div><button class="button button-secondary button-small" data-page-link="deals">Bekijken</button></div>`).join(''):'<div class="empty-row">Nog geen matches met jullie boodschappenlijst.</div>';
   const meals=state.meals.filter(x=>x.date).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,4);$('#meal-preview').innerHTML=meals.length?meals.map(x=>`<div class="meal-item"><span class="meal-day">${new Date(x.date+'T12:00').toLocaleDateString('nl-NL',{weekday:'short',day:'numeric',month:'short'})}</span><span class="meal-name">${esc(x.name)}</span></div>`).join(''):'<div class="empty-row">Nog geen maaltijden gepland.</div>';
 }
 function addTask(text,person='Samen',category='Huishouden',due=todayKey()){if(!text.trim())return;state.tasks.unshift({id:uid(),text:text.trim(),person,category,due,done:false,createdAt:Date.now()});renderPage(state.currentPage);saveState()}
@@ -60,6 +96,7 @@ function applyTheme(){const root=document.documentElement;const appearance=state
 function closeMenu(){$('.sidebar')?.classList.remove('is-open');$('#mobile-scrim')?.classList.remove('is-visible');$('#menu-toggle')?.setAttribute('aria-expanded','false')}
 function bindForms(){
   $('#focus-form').onsubmit=e=>{e.preventDefault();state.focus=$('#focus-input').value.trim();$('#focus-input').value='';renderToday();saveState('Focus opgeslagen')};
+  $('#daily-answer-form').onsubmit=e=>{e.preventDefault();state.dailyAnswers=state.dailyAnswers||{};state.dailyAnswers[todayKey()]=$('#daily-answer').value.trim();renderToday();saveState('Antwoord van de dag bewaard')};
   $('#task-form').onsubmit=e=>{e.preventDefault();addTask($('#task-input').value,$('#task-person').value,$('#task-category').value,$('#task-due').value||todayKey());$('#task-input').value=''};
   $('#agenda-form').onsubmit=e=>{e.preventDefault();addGeneric('agenda',{title:$('#agenda-title').value,date:$('#agenda-date').value,person:$('#agenda-person').value});e.target.reset()};
   $('#challenge-form').onsubmit=e=>{e.preventDefault();addGeneric('challenges',{title:$('#challenge-title').value,category:$('#challenge-category').value,target:Number($('#challenge-target').value),progress:0,points:Number($('#challenge-points').value),done:false,checkins:[]});e.target.reset()};

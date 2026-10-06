@@ -462,3 +462,21 @@
 @media(max-width:900px){.form-grid,.settings-grid{grid-template-columns:1fr 1fr}.challenge-grid{grid-template-columns:1fr 1fr}.form-row{grid-template-columns:1fr 1fr}.form-row .button{grid-column:1/-1}}
 @media(max-width:700px){.app-shell{display:block}.sidebar{position:fixed;z-index:50;left:0;top:0;transform:translateX(-105%);transition:transform .2s;width:280px}.sidebar.is-open{transform:translateX(0)}.main-area{min-height:100vh}.topbar{min-height:78px;padding:14px 16px}.topbar h1{font-size:1.4rem}.local-pill{display:none}.page-content{padding:22px 14px 90px}.welcome-row{align-items:start}.welcome-decoration{display:none}.page-grid{display:grid!important;grid-template-columns:1fr!important}.page-header h2{font-size:1.6rem}.form-grid,.settings-grid,.challenge-grid{grid-template-columns:1fr}.form-row{grid-template-columns:1fr}.mobile-bottom-nav{position:fixed!important;display:grid!important;grid-template-columns:repeat(5,1fr);left:0;right:0;bottom:0;z-index:40;padding:8px 6px calc(8px + env(safe-area-inset-bottom));background:rgba(255,255,255,.96);border-top:1px solid var(--line);backdrop-filter:blur(12px)}html[data-theme="dark"] .mobile-bottom-nav{background:rgba(20,43,62,.96)}.mobile-nav-item{display:grid;place-items:center;gap:3px;border:0;background:transparent;color:var(--muted);font-size:1rem}.mobile-nav-item small{font-size:.62rem}.mobile-nav-item.is-active{color:var(--blue);font-weight:700}.mobile-menu{display:grid!important}.toast-region{right:12px;bottom:78px}.quick-add-options{grid-template-columns:1fr}.budget-summary{gap:20px}}
 .streak-days{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.streak-day{display:grid;justify-items:center;gap:4px;padding:5px 7px;border:1px solid var(--line);border-radius:9px;font-size:.7rem}.streak-day input{accent-color:var(--blue)}.program-steps{margin:10px 0}.program-steps .setting-row{padding:8px 0}.program-steps input{width:18px;height:18px;accent-color:var(--blue)}#page-weather .challenge-card h3{font-size:1.2rem;margin:5px 0}
+
+
+/* Dashboard: dagelijkse inspiratie en terugkerende widgets */
+.dashboard-grid { align-items: stretch; }
+.daily-quote { margin: 8px 0 12px; font-size: clamp(1.1rem, 1.8vw, 1.45rem); line-height: 1.5; font-weight: 650; letter-spacing: -.02em; }
+.quote-note { margin: 0; color: var(--muted); font-size: .8rem; }
+.daily-question { margin: 8px 0 16px; font-size: 1.05rem; line-height: 1.5; font-weight: 650; }
+.question-panel textarea { width: 100%; resize: vertical; box-sizing: border-box; border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px; background: var(--paper); color: var(--ink); font: inherit; }
+.question-panel .row-between { align-items: center; flex-wrap: wrap; }
+.dashboard-challenge h3 { margin: 10px 0; }
+.shortcut-row { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+.shortcut-card { display: grid; justify-items: start; gap: 6px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); color: var(--ink); text-align: left; cursor: pointer; }
+.shortcut-card > span { font-size: 1.35rem; }
+.shortcut-card small { color: var(--muted); line-height: 1.35; }
+.shortcut-card:hover { border-color: var(--blue); }
+html[data-appearance="minimal"] .daily-quote { font-weight: 600; }
+html[data-appearance="minimal"] .shortcut-card { box-shadow: none; }
+@media(max-width:700px) { .shortcut-row { grid-template-columns: 1fr; } }
