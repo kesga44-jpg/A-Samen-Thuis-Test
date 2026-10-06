@@ -1,202 +1,401 @@
 const STORAGE_KEY = 'samenThuisV2';
+const QUOTE_KEY = 'samenThuisV2-quote';
 const PAGES = ['today','agenda','tasks','challenges','programs','mealplan','groceries','deals','weather','stock','home','car','budget','dates','travel','extras','settings'];
-const pageTitles = {today:'Vandaag',agenda:'Agenda',tasks:'Taken',challenges:'Challenges',programs:'Programma’s',mealplan:'Weekmenu',groceries:'Boodschappen',deals:'Acties & aanbiedingen',weather:'Weer',stock:'Voorraad',home:'Woning',budget:'Budget',dates:'Date Ideeën',travel:'Reizen',extras:'Extra',settings:'Instellingen'};
-const PEOPLE = ['Kees','Daphne','Samen'];
+const pageTitles = {today:'Vandaag',agenda:'Agenda',tasks:'Taken',challenges:'Challenges',programs:'Programma\'s',mealplan:'Weekmenu',groceries:'Boodschappen',deals:'Acties & aanbiedingen',weather:'Weer',stock:'Voorraad',home:'Woning',car:'Auto',budget:'Budget',dates:'Date Ideeën',travel:'Reizen',extras:'Extra',settings:'Instellingen'};
+const PEOPLE = ['Kees','Daphne'];
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 const todayKey = () => new Date().toISOString().slice(0,10);
-const dailyQuotes = [
-  'Je hoeft niet alles vandaag te doen. Begin met één kleine stap.',
-  'Een fijn thuis ontstaat door kleine dingen die je samen blijft doen.',
-  'Vooruitgang is niet altijd groot; soms is het gewoon blijven proberen.',
-  'Maak ruimte voor wat belangrijk is, niet alleen voor wat dringend is.',
-  'Aandacht is een kleine moeite met een groot effect.',
-  'Samen hoeft niet perfect te zijn. Samen is al waardevol.',
-  'Rust is ook iets wat je bewust kunt plannen.',
-  'Een gewoon moment kan bijzonder worden als je er aandacht aan geeft.',
-  'Kleine gewoontes maken het leven lichter.',
-  'Je hoeft niet dezelfde dag te hebben om elkaar toch te begrijpen.'
-];
-const dailyQuestions = [
-  'Wat zou vandaag voor jou een fijne dag maken?',
-  'Waar ben je deze week trots op, groot of klein?',
-  'Wat kunnen we vandaag doen om elkaar wat makkelijker te helpen?',
-  'Welk klein moment samen wil je deze week graag creëren?',
-  'Wat geeft jou op dit moment de meeste rust?',
-  'Welke gewoonte zouden we samen graag wat vaker willen doen?',
-  'Wat waardeer je op dit moment aan de ander?',
-  'Wat wil je deze week graag afronden zodat er meer ruimte ontstaat?',
-  'Welke plek of activiteit geeft jou direct een goed gevoel?',
-  'Wat is iets kleins waar we ons vandaag op kunnen verheugen?',
-  'Wat zou je graag eens samen willen leren of proberen?',
-  'Wanneer voelde je je de afgelopen tijd echt gesteund?'
-];
-function dailyIndex(list){const d=new Date();const start=new Date(d.getFullYear(),0,0);const day=Math.floor((d-start)/86400000);return day%list.length}
 
 function defaultState(){
   return {version:2,currentPage:'today',theme:'light',appearance:'normal',minimalColor:'#315f86',focus:'',tasks:[
     {id:uid(),text:'Wasmachine aanzetten',person:'Kees',category:'Huishouden',due:todayKey(),done:false,createdAt:Date.now()},
     {id:uid(),text:'Boodschappenlijst controleren',person:'Samen',category:'Boodschappen',due:todayKey(),done:false,createdAt:Date.now()}
   ],agenda:[],challenges:[
-    {id:uid(),title:'3× bewegen deze week',category:'Sport',target:3,progress:1,points:50,done:false},
-    {id:uid(),title:'30 minuten lezen',category:'Lezen',target:1,progress:0,points:20,done:false},
-    {id:uid(),title:'Samen iets leuks doen',category:'Samen',target:1,progress:0,points:30,done:false}
-  ],programs:[],deals:[],meals:[],groceries:[],stock:[],home:[],budget:{monthly:0,spent:0,items:[]},dates:[],travel:[],car:{model:'',plate:'',year:'',mileage:'',apkDate:'',insuranceDate:'',maintenance:[],fuel:[],costs:[]},extras:[],dailyAnswers:{},notifications:true,history:[]};
+    {id:uid(),title:'3× bewegen deze week',category:'Sport',target:3,progress:1,points:50,done:false,checkins:[]},
+    {id:uid(),title:'30 minuten lezen',category:'Lezen',target:1,progress:0,points:20,done:false,checkins:[]},
+    {id:uid(),title:'Samen iets leuks doen',category:'Samen',target:1,progress:0,points:30,done:false,checkins:[]}
+  ],programs:[],deals:[],meals:[],groceries:[],stock:[],home:[],budget:{monthly:0,spent:0,items:[]},dates:[],travel:[],car:{model:'',plate:'',year:'',mileage:'',apkDate:'',insuranceDate:'',maintenance:[],fuel:[],costs:[]},extras:[],history:[],dailyAnswers:{}};
 }
 function loadState(){try{const raw=localStorage.getItem(STORAGE_KEY);return raw?merge(defaultState(),JSON.parse(raw)):defaultState()}catch{return defaultState()}}
-function merge(base,saved){return {...base,...saved,tasks:Array.isArray(saved.tasks)?saved.tasks:base.tasks,challenges:Array.isArray(saved.challenges)?saved.challenges:base.challenges,programs:Array.isArray(saved.programs)?saved.programs:base.programs,deals:Array.isArray(saved.deals)?saved.deals:base.deals}}
+function merge(base,saved){return {...base,...saved,tasks:Array.isArray(saved.tasks)?saved.tasks:base.tasks,challenges:Array.isArray(saved.challenges)?saved.challenges:base.challenges,programs:Array.isArray(saved.programs)?saved.programs:base.programs,meals:Array.isArray(saved.meals)?saved.meals:base.meals,groceries:Array.isArray(saved.groceries)?saved.groceries:base.groceries,agenda:Array.isArray(saved.agenda)?saved.agenda:base.agenda,deals:Array.isArray(saved.deals)?saved.deals:base.deals,stock:Array.isArray(saved.stock)?saved.stock:base.stock,home:Array.isArray(saved.home)?saved.home:base.home,dates:Array.isArray(saved.dates)?saved.dates:base.dates,travel:Array.isArray(saved.travel)?saved.travel:base.travel,extras:Array.isArray(saved.extras)?saved.extras:base.extras,budget:saved.budget||base.budget,car:saved.car||base.car,history:Array.isArray(saved.history)?saved.history:base.history,dailyAnswers:saved.dailyAnswers||base.dailyAnswers}}
 let state=loadState();
 const $=(s,r=document)=>r.querySelector(s); const $$=(s,r=document)=>[...r.querySelectorAll(s)];
 function saveState(message='Opgeslagen'){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); if(message) toast(message); return true}catch{toast('Opslag niet beschikbaar');return false}}
 function esc(v=''){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
 function toast(message){const r=$('#toast-region');if(!r)return;const t=document.createElement('div');t.className='toast';t.textContent=message;r.append(t);setTimeout(()=>t.remove(),2400)}
-function showPage(page){if(!PAGES.includes(page))page='today';PAGES.forEach(p=>$(`#page-${p}`)?.classList.toggle('is-active',p===page));$$('[data-page-link]').forEach(x=>x.classList.toggle('is-active',x.dataset.pageLink===page));state.currentPage=page;$('#pageTitle').textContent=pageTitles[page];closeMenu();renderPage(page);localStorage.setItem(STORAGE_KEY,JSON.stringify(state));}
-function renderPage(page){({today:renderToday,tasks:renderTasksPage,challenges:renderChallenges,programs:renderPrograms,agenda:renderAgenda,mealplan:renderMeals,groceries:renderGroceries,deals:renderDeals,weather:renderWeather,stock:renderStock,home:renderHome,budget:renderBudget,dates:renderDates,travel:renderTravel,extras:renderExtras,car:renderCar,settings:renderSettings}[page]||renderToday)()}
-function personAvatar(person){return person==='Daphne'?'D':person==='Samen'?'S':'K'}
-function taskMarkup(task,index){return `<li class="task-row ${task.done?'is-done':''}" draggable="true" data-id="${task.id}" data-index="${index}"><span class="drag">⠿</span><input class="task-check" type="checkbox" ${task.done?'checked':''} aria-label="${esc(task.text)}"><span class="avatar avatar-${task.person==='Daphne'?'purple':task.person==='Samen'?'green':'blue'}">${personAvatar(task.person)}</span><span class="task-label"><strong>${esc(task.text)}</strong><small>${esc(task.category)} · ${esc(task.person)}${task.due?` · ${esc(task.due)}`:''}</small></span><button class="icon-button task-delete" aria-label="Taak verwijderen">×</button></li>`}
+function showPage(page){if(!PAGES.includes(page))page='today';state.currentPage=page;PAGES.forEach(p=>$(`#page-${p}`)?.classList.toggle('is-active',p===page));$$('[data-page-link]').forEach(x=>x.classList.toggle('is-active',x.dataset.pageLink===page))}
+function renderPage(page){({today:renderToday,tasks:renderTasksPage,challenges:renderChallenges,programs:renderPrograms,agenda:renderAgenda,mealplan:renderMeals,groceries:renderGroceries,deals:renderDeals,weather:renderWeather,stock:renderStock,home:renderHome,car:renderCar,budget:renderBudget,dates:renderDates,travel:renderTravel,extras:renderExtras,settings:renderSettings}[page]||function(){})()} 
+function personAvatar(person){return person==='Daphne'?'D':'K'}
+function taskMarkup(task,index){return `<li class="task-row ${task.done?'is-done':''}" draggable="true" data-id="${task.id}" data-index="${index}"><span class="drag">⠿</span><input class="task-check" type="checkbox" ${task.done?'checked':''} title="Afvinken"><span class="person-badge">${personAvatar(task.person)}</span><div class="task-content"><span class="task-text">${esc(task.text)}</span><small>${esc(task.category)} · ${task.due}</small></div><button class="icon-button delete-task" data-id="${task.id}" type="button">✕</button></li>`}
+
+async function loadBrainyQuote(){
+  try{
+    const response=await fetch('https://www.brainyquote.com/link/quotebr.rss',{cache:'no-store'});
+    if(!response.ok)return;
+    const xml=new DOMParser().parseFromString(await response.text(),'application/xml');
+    const item=xml.querySelector('item');
+    if(!item)return;
+    const title=item.querySelector('title')?.textContent?.trim()||'';
+    const descriptionHtml=item.querySelector('description')?.textContent||'';
+    const description=new DOMParser().parseFromString(descriptionHtml,'text/html').body.textContent.trim();
+    if(!title&&!description)return;
+    const genericTitle=/^(today'?s )?quote/i.test(title);
+    const quote=genericTitle?description:title;
+    const author=genericTitle||description===title?'':description;
+    const markup=`<blockquote>${esc(quote)}</blockquote>${author?`<p>${esc(author)}</p>`:''}`;
+    localStorage.setItem(QUOTE_KEY,JSON.stringify({date:todayKey(),markup}));
+    if(state.currentPage==='today')renderToday();
+  }catch(e){}
+}
+function renderQuote(){
+  let cache;
+  try{cache=JSON.parse(localStorage.getItem(QUOTE_KEY)||'null')}catch{cache=null}
+  const quote=cache?.markup&&cache.date===todayKey()?`<div class="quote-content">${cache.markup}</div>`:'<p class="quote-offline">Quote wordt opgehaald zodra er verbinding is.</p>';
+  return `<section class="panel quote-panel"><div class="panel-heading"><div><p class="eyebrow">DAGELIJKSE INSPIRATIE</p><h2>Quote van de dag</h2></div><span class="panel-icon">✦</span></div><blockquote id="daily-quote">${quote}</blockquote><p style="text-align:center;font-size:0.8rem;color:#666;margin-top:12px">Bron: <a href="https://www.brainyquote.com/link/quotebr.rss" target="_blank">BrainyQuote RSS</a></p></section>`;
+}
+
+function renderDailyQuestion(){
+  const today=todayKey();
+  const answers=state.dailyAnswers[today]||{};
+  const bothAnswered=Boolean(answers.Kees&&answers.Daphne);
+  const personButton=person=>answers[person]?`<button class="button button-secondary button-small" disabled>${bothAnswered?`${person}: antwoord vast`:`${person} beantwoord`}</button>`:`<button class="button button-primary button-small" data-answer-person="${person}">${person}</button>`;
+  const displayAnswers=bothAnswered?`<div class="answer-grid"><article><span>Kees</span><p>${esc(answers.Kees)}</p></article><article><span>Daphne</span><p>${esc(answers.Daphne)}</p></article></div>`:'';
+  return `<section class="panel question-panel"><div class="panel-heading"><div><p class="eyebrow">EVEN SAMEN STILSTAAN</p><h2>Vraag van de dag</h2></div><span class="panel-icon">♡</span></div><p id="daily-question"></p>${displayAnswers}<div class="button-row">${personButton('Kees')}${personButton('Daphne')}</div></section>`;
+}
+
+function openQuestion(person){
+  const today=todayKey();
+  const answers=state.dailyAnswers[today]||{};
+  if(answers.Kees&&answers.Daphne){toast('Beide antwoorden staan vast');return}
+  if(answers[person]){toast(`${person} heeft vandaag al geantwoord`);return}
+  const dialog=$('#question-dialog');
+  $('#question-title').textContent=`${person}, jouw antwoord`;
+  $('#question-text').textContent=$('#daily-question').textContent;
+  $('#question-person').value=person;
+  $('#question-answer').value=answers[person]||'';
+  dialog.showModal();
+  $('#question-answer').focus();
+}
+
 function renderToday(){
   const today=todayKey();
   $('#today-date-label').textContent=new Date().toLocaleDateString('nl-NL',{weekday:'long',day:'numeric',month:'long'});
-  $('#daily-quote').textContent='“'+dailyQuotes[dailyIndex(dailyQuotes)]+'”';
-  $('#daily-question').textContent=dailyQuestions[dailyIndex(dailyQuestions)];
-  if($('#daily-answer'))$('#daily-answer').value=(state.dailyAnswers||{})[today]||'';
-  if($('#daily-answer-status'))$('#daily-answer-status').textContent=(state.dailyAnswers||{})[today]?'Antwoord van vandaag is bewaard.':'Je antwoord blijft lokaal bewaard.';
-  $('#focus-current').textContent=state.focus||'Nog geen focus gekozen.';$('#focus-current').classList.toggle('empty-state',!state.focus);
-  const open=state.tasks.filter(t=>!t.done);$('#task-list').innerHTML=open.slice(0,5).map(taskMarkup).join('')||'<li class="empty-row">Geen openstaande taken 🎉</li>';$('#task-count').textContent=`${open.length} openstaande taak${open.length===1?'':'taken'}`;
-  $('#today-stats').innerHTML=`<article class="stat-tile"><span>Open taken</span><strong>${open.length}</strong><small>${state.tasks.length?`${state.tasks.filter(t=>t.done).length} afgerond`: 'Nog niets afgerond'}</small></article><article class="stat-tile"><span>Challenges</span><strong>${state.challenges.filter(c=>c.done).length}/${state.challenges.length}</strong><small>${state.challenges.reduce((a,c)=>a+(Number(c.progress||0)*Number(c.points||0)/Math.max(1,Number(c.target||1))),0).toFixed(0)} punten in opbouw</small></article>`;
-  const challenge=state.challenges.find(c=>!c.done)||state.challenges[0];$('#today-challenge').innerHTML=challenge?`<div class="dashboard-challenge"><span class="tag">${esc(challenge.category||'Challenge')}</span><h3>${esc(challenge.title)}</h3><div class="progress"><span style="width:${Math.min(100,Number(challenge.progress||0)/Math.max(1,Number(challenge.target||1))*100)}%"></span></div><div class="row-between"><small>${Number(challenge.progress||0)}/${Number(challenge.target||1)} keer · ${Number(challenge.points||0)} punten</small><button class="button button-primary button-small challenge-progress" data-id="${challenge.id}">${challenge.progress>=challenge.target?'Voltooid ✓':'Check-in'}</button></div></div>`:'<div class="empty-row">Nog geen challenges. Voeg er een toe op de Challenges-pagina.</div>';
-  const agenda=state.agenda.filter(a=>!a.date||a.date>=today).sort((a,b)=>(a.date||'').localeCompare(b.date||'')).slice(0,3);$('#today-agenda').innerHTML=agenda.length?agenda.map(a=>`<div class="list-card"><div><strong>${esc(a.title)}</strong><small>${a.date?new Date(a.date+'T12:00').toLocaleDateString('nl-NL',{weekday:'short',day:'numeric',month:'short'}):'Datum niet ingesteld'} · ${esc(a.person||'Samen')}</small></div></div>`).join(''):'<div class="empty-row">Geen komende afspraken ingevoerd.</div>';
+  $('#daily-question').textContent='Wat zou vandaag voor jou een fijne dag maken?';
+  const open=state.tasks.filter(t=>!t.done);
+  $('#task-list').innerHTML=open.slice(0,5).map(taskMarkup).join('')||'<li class="empty-row">Geen openstaande taken 🎉</li>';
+  $('#task-count').textContent=open.length;
+  $('#today-stats').innerHTML=`<article class="stat-tile"><span>Open taken</span><strong>${open.length}</strong><small>${state.tasks.length?`${state.tasks.filter(t=>t.done).length} afgerond`:'Nog geen taken'}</small></article>`;
+  const challenge=state.challenges.find(c=>!c.done)||state.challenges[0];
+  $('#today-challenge').innerHTML=challenge?`<div class="dashboard-challenge"><span class="tag">${esc(challenge.category||'Challenge')}</span><strong>${esc(challenge.title)}</strong><small>${challenge.progress}/${challenge.target} · ${challenge.points} 🏆</small></div>`:'';
+  const agenda=state.agenda.filter(a=>!a.date||a.date>=today).sort((a,b)=>(a.date||'').localeCompare(b.date||'')).slice(0,3);
+  $('#today-agenda').innerHTML=agenda.length?agenda.map(a=>`<div class="list-item"><strong>${esc(a.title)}</strong><small>${a.date||'Geen datum'} · ${personAvatar(a.person)}</small></div>`).join(''):'<p class="empty-row">Geen afspraken gepland</p>';
   $('#dashboard-grocery-count').textContent=`${state.groceries.filter(g=>!g.done).length} producten op de lijst`;
-  const deals=state.deals.filter(d=>(!d.valid||d.valid>=today)&&state.groceries.some(g=>!g.done&&(g.name.toLowerCase().includes(d.product.toLowerCase())||d.product.toLowerCase().includes(g.name.toLowerCase()))));$('#today-deals').innerHTML=deals.length?deals.map(d=>`<div class="list-card"><div><strong>${esc(d.product)} · € ${Number(d.price).toFixed(2)}</strong><small>${esc(d.store)} · geldig t/m ${esc(d.valid||'onbekend')}</small></div><button class="button button-secondary button-small" data-page-link="deals">Bekijken</button></div>`).join(''):'<div class="empty-row">Nog geen matches met jullie boodschappenlijst.</div>';
-  const meals=state.meals.filter(x=>x.date).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,4);$('#meal-preview').innerHTML=meals.length?meals.map(x=>`<div class="meal-item"><span class="meal-day">${new Date(x.date+'T12:00').toLocaleDateString('nl-NL',{weekday:'short',day:'numeric',month:'short'})}</span><span class="meal-name">${esc(x.name)}</span></div>`).join(''):'<div class="empty-row">Nog geen maaltijden gepland.</div>';
+  const meals=state.meals.filter(x=>x.date).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,4);
+  $('#meal-preview').innerHTML=meals.length?meals.map(x=>`<div class="meal-item"><span class="meal-date">${x.date}</span><span>${esc(x.name)}</span></div>`).join(''):'<p class="empty-row">Plan je weekmenu</p>';
 }
-function addTask(text,person='Samen',category='Huishouden',due=todayKey()){if(!text.trim())return;state.tasks.unshift({id:uid(),text:text.trim(),person,category,due,done:false,createdAt:Date.now()});renderPage(state.currentPage);saveState()}
-function renderTasksPage(){const list=$('#all-task-list');if(!list)return;list.innerHTML=state.tasks.map(taskMarkup).join('')||'<li class="empty-row">Nog geen taken.</li>';$('#task-open-count').textContent=state.tasks.filter(t=>!t.done).length}
-function toggleTask(id){const t=state.tasks.find(x=>x.id===id);if(!t)return;t.done=!t.done;if(t.done)state.history.unshift({type:'task',text:t.text,at:new Date().toISOString()});renderToday();renderTasksPage();saveState(t.done?'Taak afgerond ✓':'Taak opnieuw geopend')}
-function deleteTask(id){state.tasks=state.tasks.filter(x=>x.id!==id);renderToday();renderTasksPage();saveState('Taak verwijderd')}
-function renderAgenda(){const el=$('#agenda-list');const items=[...state.agenda].sort((a,b)=>a.date.localeCompare(b.date));el.innerHTML=items.map((x,i)=>`<li class="list-card"><div><strong>${esc(x.title)}</strong><small>${esc(x.date)} · ${esc(x.person)}</small></div><button class="icon-button delete-generic" data-type="agenda" data-id="${x.id}">×</button></li>`).join('')||'<li class="empty-row">Nog geen afspraken.</li>'}
-function renderChallenges(){const el=$('#challenge-list');el.innerHTML=state.challenges.map(c=>{c.checkins=c.checkins||[];const streak=calcStreak(c.checkins);return `<article class="challenge-card ${c.done?'complete':''}"><div class="challenge-icon">✦</div><div class="challenge-main"><div class="row-between"><div><span class="tag">${esc(c.category)}</span><h3>${esc(c.title)}</h3></div><strong>${Math.round(c.progress/c.target*100)}%</strong></div><div class="progress"><span style="width:${Math.min(100,c.progress/c.target*100)}%"></span></div><div class="row-between"><small>${c.progress}/${c.target} keer · ${c.points} punten · 🔥 ${streak} dagen</small><button class="button button-secondary button-small challenge-progress" data-id="${c.id}">${c.checkins.includes(todayKey())?'Vandaag gedaan ✓':'＋ Check-in'}</button></div><div class="streak-days">${Array.from({length:7},(_,i)=>{const d=new Date();d.setDate(d.getDate()-6+i);const k=d.toISOString().slice(0,10);return `<label class="streak-day"><input type="checkbox" class="streak-check" data-id="${c.id}" data-date="${k}" ${c.checkins.includes(k)?'checked':''}><small>${d.toLocaleDateString('nl-NL',{weekday:'short'}).slice(0,2)}</small></label>`}).join('')}</div></div></article>`}).join('')}
-function calcStreak(days=[]){let n=0,d=new Date();if(!days.includes(todayKey()))d.setDate(d.getDate()-1);while(days.includes(d.toISOString().slice(0,10))){n++;d.setDate(d.getDate()-1)}return n}
-function renderPrograms(){const el=$('#program-list');if(!el)return;el.innerHTML=state.programs.map(p=>`<article class="challenge-card"><div class="challenge-icon">📆</div><div class="challenge-main"><span class="tag">${esc(p.category)}</span><h3>${esc(p.title)}</h3><div class="progress"><span style="width:${p.steps.length?p.steps.filter(s=>s.done).length/p.steps.length*100:0}%"></span></div><small>${p.steps.filter(s=>s.done).length}/${p.steps.length} stappen · ${calcStreak(p.checkins||[])} dagen streak</small><div class="program-steps">${p.steps.map((st,i)=>`<label class="setting-row"><span>${i+1}. ${esc(st.text)}</span><input type="checkbox" class="program-step-check" data-id="${p.id}" data-index="${i}" ${st.done?'checked':''}></label>`).join('')}</div><button class="button button-secondary button-small delete-generic" data-type="programs" data-id="${p.id}">Programma verwijderen</button></div></article>`).join('')||'<div class="empty-row">Nog geen programma’s. Maak er een hierboven of importeer JSON.</div>'}
-function renderDeals(){const el=$('#deal-list');if(!el)return;const today=todayKey();el.innerHTML=state.deals.filter(d=>!d.valid||d.valid>=today).map(d=>{const match=state.groceries.some(g=>!g.done&&g.name.toLowerCase().includes(d.product.toLowerCase())||!g.done&&d.product.toLowerCase().includes(g.name.toLowerCase()));return `<article class="list-card ${match?'warning':''}"><div><strong>${esc(d.product)} · € ${Number(d.price).toFixed(2)}</strong><small>${esc(d.store)} · geldig t/m ${esc(d.valid||'onbekend')} ${match?'· Match met boodschappenlijst!':''}</small></div><div class="button-row"><button class="button button-secondary button-small deal-add" data-id="${d.id}">＋ Boodschappen</button><button class="icon-button delete-generic" data-type="deals" data-id="${d.id}">×</button></div></article>`}).join('')||'<div class="empty-row">Geen actuele aanbiedingen. Voeg een aanbieding toe; automatische winkeldata is niet aangesloten.</div>'}
-function weatherEsc(v){return esc(String(v??''))}
-function fmt(n,d=0){return n==null||Number.isNaN(Number(n))?'—':Number(n).toFixed(d)}
-function pollenLevel(v){if(v==null)return ['Geen data','none'];if(v<10)return ['Laag','low'];if(v<30)return ['Matig','moderate'];if(v<100)return ['Hoog','high'];return ['Zeer hoog','very-high']}
-function aqiLevel(v){if(v==null)return ['Geen data','none'];if(v<=20)return ['Goed','good'];if(v<=40)return ['Redelijk','fair'];if(v<=60)return ['Matig','moderate'];if(v<=80)return ['Slecht','poor'];if(v<=100)return ['Zeer slecht','very-poor'];return ['Extreem slecht','extreme']}
-function clothingAdvice(c){
-  const t=Number(c.temperature_2m), feels=Number(c.apparent_temperature), rain=Number(c.precipitation||0), wind=Number(c.wind_speed_10m||0);
-  let type='light', title='Lichte kleding', text='Luchtige kleding is voldoende.';
-  if(t<5){type='warm';title='Warme kleding';text='Warme jas, lange broek en dichte schoenen.'}
-  else if(t<12){type='jacket';title='Jas en lange broek';text='Een jas of lichte winterjas met lange broek is prettig.'}
-  else if(t<18){type='layers';title='Laagjes';text='Draag laagjes zodat je makkelijk kunt aanpassen.'}
-  if(rain>0.3){type='rain';title='Regenlaag meenemen';text+=' Neem een regenjas of compacte paraplu mee.'}
-  if(wind>30){text+=' Door de wind voelt het kouder aan; kies een winddichte laag.'}
-  return {type,title,text,feel:`Gevoel ${fmt(feels,1)}°C · wind ${fmt(wind,0)} km/u`,rain:rain>0.3}
+
+function addTask(text,person='Samen',category='Huishouden',due=todayKey()){
+  if(!text.trim())return;
+  state.tasks.unshift({id:uid(),text:text.trim(),person,category,due,done:false,createdAt:Date.now()});
+  renderToday();
+  renderTasksPage();
+  saveState('Taak toegevoegd');
 }
-function weatherClothingImage(type){return `assets/weather-clothing/${type}.svg`}
-function chartSvg(rows,type){
-  if(!rows?.length)return '<div class="empty-row">Geen grafiekgegevens beschikbaar.</div>';
-  const W=1000,H=340,L=54,R=22,T=28,B=54, PW=W-L-R, PH=H-T-B;
-  const escAttr=s=>String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
-  const all=type==='hourly'?rows.map(r=>Number(r.temp)).filter(Number.isFinite):rows.flatMap(r=>[Number(r.min),Number(r.max)]).filter(Number.isFinite);
-  const min=Math.floor(Math.min(...all)-2), max=Math.ceil(Math.max(...all)+2), range=Math.max(4,max-min);
-  const y=v=>T+(max-v)/range*PH, x=i=>L+(i/Math.max(1,rows.length-1))*PW;
-  const grid=[0,1,2,3,4].map(i=>{const yy=T+i*PH/4;const val=max-i*range/4;return `<line x1="${L}" y1="${yy}" x2="${W-R}" y2="${yy}" class="weather-grid-line"/><text x="${L-10}" y="${yy+4}" text-anchor="end" class="weather-axis">${Math.round(val)}°</text>`}).join('');
-  const labels=rows.map((r,i)=>{if(rows.length>10&&i%3!==0&&i!==rows.length-1)return '';return `<text x="${x(i)}" y="${H-18}" text-anchor="middle" class="weather-axis">${escAttr(r.label)}</text>`}).join('');
-  const line=(key,cls)=>`<path d="${rows.map((r,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${y(Number(r[key])).toFixed(1)}`).join(' ')}" class="${cls}"/>`;
-  let content='';
-  if(type==='hourly'){
-    const rainY=v=>T+(100-v)/100*PH;
-    content=`<path d="${rows.map((r,i)=>`${i?'L':'M'} ${x(i).toFixed(1)} ${rainY(Number(r.rain)||0).toFixed(1)}`).join(' ')}" class="weather-rain-line"/>${line('temp','weather-temp-line')}`;
-    content+=rows.map((r,i)=>`<circle cx="${x(i)}" cy="${y(Number(r.temp))}" r="3.5" class="weather-temp-dot"><title>${escAttr(r.label)} · ${fmt(r.temp,1)}°C · regen ${fmt(r.rain,0)}%</title></circle>`).join('');
-    content+=`<text x="${W-R}" y="${T+4}" text-anchor="end" class="weather-legend">— temperatuur &nbsp;&nbsp; ⋯ neerslagkans</text>`;
-  }else{
-    content=`${line('max','weather-temp-line')}${line('min','weather-min-line')}`;
-    content+=rows.map((r,i)=>`<line x1="${x(i)}" y1="${y(Number(r.max))}" x2="${x(i)}" y2="${y(Number(r.min))}" class="weather-range-line"/><circle cx="${x(i)}" cy="${y(Number(r.max))}" r="5" class="weather-temp-dot"><title>${escAttr(r.label)} · max ${fmt(r.max,1)}°C</title></circle><circle cx="${x(i)}" cy="${y(Number(r.min))}" r="5" class="weather-min-dot"><title>${escAttr(r.label)} · min ${fmt(r.min,1)}°C</title></circle><text x="${x(i)}" y="${Math.max(T+14,y(Number(r.max))-12)}" text-anchor="middle" class="weather-value">${fmt(r.max,0)}°</text>`).join('');
-    content+=`<text x="${W-R}" y="${T+4}" text-anchor="end" class="weather-legend">● maximum &nbsp;&nbsp; ● minimum</text>`;
-  }
-  return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${grid}${content}${labels}</svg>`;
+
+function renderTasksPage(){
+  const list=$('#all-task-list');
+  if(!list)return;
+  list.innerHTML=state.tasks.map(taskMarkup).join('')||'<li class="empty-row">Nog geen taken.</li>';
+  $('#task-open-count').textContent=state.tasks.filter(t=>!t.done).length;
 }
+
+function toggleTask(id){
+  const t=state.tasks.find(x=>x.id===id);
+  if(!t)return;
+  t.done=!t.done;
+  if(t.done)state.history.unshift({type:'task',text:t.text,at:new Date().toISOString()});
+  renderToday();
+  renderTasksPage();
+  saveState(t.done?'Taak afgerond':'Taak geopend');
+}
+
+function deleteTask(id){
+  state.tasks=state.tasks.filter(x=>x.id!==id);
+  renderToday();
+  renderTasksPage();
+  saveState('Taak verwijderd');
+}
+
+function renderAgenda(){
+  const el=$('#agenda-list');
+  const items=[...state.agenda].sort((a,b)=>a.date.localeCompare(b.date));
+  el.innerHTML=items.map((x,i)=>`<li class="list-card"><div><strong>${esc(x.title)}</strong><small>${x.date} · ${personAvatar(x.person)}</small></div><button class="icon-button" data-delete-item="agenda" data-id="${x.id}">✕</button></li>`).join('')||'<li class="empty-row">Geen afspraken.</li>';
+}
+
+function renderChallenges(){
+  const el=$('#challenge-list');
+  el.innerHTML=state.challenges.map(c=>{
+    c.checkins=c.checkins||[];
+    const streak=calcStreak(c.checkins);
+    return `<article class="challenge-card"><div class="challenge-icon">🏆</div><div class="challenge-content"><strong>${esc(c.title)}</strong><small>${c.category}</small><div class="progress-bar"><div class="progress-fill" style="width:${(c.progress/c.target)*100}%"></div></div><p style="margin-top:8px;font-size:0.85rem">${c.progress}/${c.target} · ${c.points} punten · 🔥 Streak: ${streak}</p></div><button class="button button-small button-primary" data-check-challenge="${c.id}">Check-in vandaag</button></article>`;
+  }).join('');
+}
+
+function calcStreak(days=[]){
+  let n=0,d=new Date();
+  if(!days.includes(todayKey()))d.setDate(d.getDate()-1);
+  while(days.includes(d.toISOString().slice(0,10))){n++;d.setDate(d.getDate()-1)}
+  return n;
+}
+
+function renderPrograms(){
+  const el=$('#program-list');
+  if(!el)return;
+  el.innerHTML=state.programs.map(p=>`<article class="challenge-card"><div class="challenge-icon">📆</div><div class="challenge-content"><strong>${esc(p.title)}</strong><small>${p.category}</small></div><button class="icon-button" data-delete-item="programs" data-id="${p.id}">✕</button></article>`).join('')||'<li class="empty-row">Geen programma\'s.</li>';
+}
+
+function renderDeals(){
+  const el=$('#deal-list');
+  if(!el)return;
+  const today=todayKey();
+  el.innerHTML=state.deals.filter(d=>!d.valid||d.valid>=today).map(d=>`<li class="list-card"><div><strong>${esc(d.product)}</strong><small>${esc(d.store)} · €${Number(d.price).toFixed(2)}</small></div><button class="icon-button" data-delete-item="deals" data-id="${d.id}">✕</button></li>`).join('')||'<li class="empty-row">Geen aanbiedingen.</li>';
+}
+
 function renderWeather(){
-  const el=$('#weather-current');if(!el)return;
+  const el=$('#weather-current');
+  if(!el)return;
   if(!weatherLoaded){el.innerHTML='<div class="empty-row">Haal weergegevens op om de verwachting te bekijken.</div>';return}
-  el.innerHTML=weatherLoaded.current.map(x=>`<article class="weather-current-card"><span class="weather-current-icon">${x.icon}</span><div><small>${weatherEsc(x.label)}</small><strong>${weatherEsc(x.value)}</strong></div></article>`).join('');
-  $('#weather-hourly-chart').innerHTML=chartSvg(weatherLoaded.hourly,'hourly');
-  $('#weather-daily-chart').innerHTML=chartSvg(weatherLoaded.daily,'daily');
-  const h=weatherLoaded.health;
-  const pollen=[['Graspollen','grass','🌾'],['Berkenpollen','birch','🌳'],['Elzenpollen','alder','🌿'],['Bijvoetpollen','mugwort','🌱']];
-  $('#weather-pollen').innerHTML=pollen.map(([name,key,icon])=>{const v=h[key], [label,cls]=pollenLevel(v);const pct=Math.min(100,(Number(v)||0)/100*100);return `<article class="weather-pollen-card"><div class="weather-card-top"><span class="weather-mini-icon">${icon}</span><div><strong>${name}</strong><span class="weather-status-pill ${cls}">${label}</span></div></div><div class="weather-pollen-number">${v==null?'—':Math.round(v)} <small>korrels/m³</small></div><div class="weather-meter"><span style="width:${pct}%"></span></div></article>`}).join('');
-  const [aqiText,aqiClass]=aqiLevel(h.aqi);const aqi=Math.round(Number(h.aqi)||0);const aqiPct=Math.min(100,aqi);
-  $('#weather-air').innerHTML=`<div class="aqi-main"><div class="aqi-score ${aqiClass}"><strong>${h.aqi==null?'—':aqi}</strong><span>EU AQI</span></div><div><span class="weather-status-pill ${aqiClass}">${aqiText}</span><h4>${aqiText==='Goed'?'Gunstig voor buiten zijn':aqiText==='Redelijk'?'Overwegend prima, gevoelige luchtwegen opletten':'Extra aandacht voor gevoelige luchtwegen'}</h4><p>De Europese AQI is gebaseerd op de hoogste index van de relevante verontreinigende stoffen.</p></div></div><div class="air-pollutants"><article><span>PM2.5</span><strong>${fmt(h.pm25,1)}</strong><small>µg/m³</small><div class="air-bar"><span style="width:${Math.min(100,(Number(h.pm25)||0)/50*100)}%"></span></div></article><article><span>PM10</span><strong>${fmt(h.pm10,1)}</strong><small>µg/m³</small><div class="air-bar"><span style="width:${Math.min(100,(Number(h.pm10)||0)/120*100)}%"></span></div></article></div><div class="aqi-scale"><span>0 goed</span><span>20</span><span>40</span><span>60</span><span>80</span><span>100+</span></div>`;
-  const advice=clothingAdvice(h.current);const pollenMax=Math.max(h.grass||0,h.birch||0,h.alder||0,h.mugwort||0);const pollenText=pollenLevel(pollenMax)[0];
-  $('#weather-advice').innerHTML=`<article class="clothing-hero"><img src="${weatherClothingImage(advice.type)}" alt="Minimalistische illustratie van kledingadvies"><div><span class="weather-status-pill">Vandaag</span><h4>${advice.title}</h4><p>${weatherEsc(advice.text)}</p><small>${weatherEsc(advice.feel)}</small></div></article><article class="clothing-health"><div class="health-advice-icon">🌿</div><div><h4>Hooikoorts & luchtwegen</h4><p>Pollen: <strong>${weatherEsc(pollenText)}</strong> · luchtkwaliteit: <strong>${weatherEsc(aqiText)}</strong>.</p><p class="muted">${pollenMax>=30||aqi>60?'Als je gevoelig bent voor pollen of luchtkwaliteit, is dit een dag om buitenbelasting extra in de gaten te houden.':'De omgevingscondities zijn op dit moment relatief gunstig.'}</p></div></article>`;
 }
+
 let weatherLoaded=null;
 async function loadWeather(){
-  const status=$('#weather-status');status.textContent='Weergegevens ophalen…';
+  const status=$('#weather-status');
+  status.textContent='Weergegevens ophalen…';
   try{
-    let lat=Number($('#weather-lat').value),lon=Number($('#weather-lon').value);const place=$('#weather-place').value.trim();
-    if(place){const gr=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(place)}&count=1&language=nl&format=json`);const gj=await gr.json();if(!gj.results?.length)throw Error('Plaats niet gevonden');lat=gj.results[0].latitude;lon=gj.results[0].longitude;$('#weather-lat').value=lat;$('#weather-lon').value=lon;}
-    else if(navigator.geolocation){try{const pos=await new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,{timeout:3500}));lat=pos.coords.latitude;lon=pos.coords.longitude;$('#weather-lat').value=lat;$('#weather-lon').value=lon}catch{}}
-    const weatherUrl=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,wind_speed_10m,wind_gusts_10m,uv_index,is_day&hourly=temperature_2m,precipitation_probability,precipitation,wind_speed_10m,visibility&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum,uv_index_max,sunrise,sunset&timezone=auto&forecast_days=7`;
-    const airUrl=`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=european_aqi,pm2_5,pm10,grass_pollen,birch_pollen,alder_pollen,mugwort_pollen&hourly=european_aqi,pm2_5,pm10,grass_pollen,birch_pollen,alder_pollen,mugwort_pollen&timezone=auto&forecast_days=4`;
-    const [r,ar]=await Promise.all([fetch(weatherUrl),fetch(airUrl)]);if(!r.ok||!ar.ok)throw Error('Weerbron niet bereikbaar');const d=await r.json(),a=await ar.json(),c=d.current;
-    weatherLoaded={current:[{icon:'🌡️',label:'Temperatuur / gevoel',value:`${fmt(c.temperature_2m,1)}°C / ${fmt(c.apparent_temperature,1)}°C`},{icon:'💧',label:'Luchtvochtigheid',value:`${fmt(c.relative_humidity_2m,0)}%`},{icon:'🌧️',label:'Neerslag nu',value:`${fmt(c.precipitation,1)} mm`},{icon:'💨',label:'Wind / windstoten',value:`${fmt(c.wind_speed_10m,0)} / ${fmt(c.wind_gusts_10m,0)} km/u`},{icon:'☀️',label:'UV-index',value:fmt(c.uv_index,1)}],hourly:d.hourly.time.slice(0,24).map((t,i)=>({time:t.slice(11,16),label:t.slice(11,16),temp:d.hourly.temperature_2m[i],rain:d.hourly.precipitation_probability[i]??0,wind:d.hourly.wind_speed_10m[i],visibility:(d.hourly.visibility[i]||0)/1000,precip:d.hourly.precipitation[i]})),daily:d.daily.time.map((t,i)=>({date:t,label:new Date(t+'T12:00:00').toLocaleDateString('nl-NL',{weekday:'short',day:'numeric'}),min:d.daily.temperature_2m_min[i],max:d.daily.temperature_2m_max[i],rain:d.daily.precipitation_probability_max[i],precip:d.daily.precipitation_sum[i],uv:d.daily.uv_index_max[i],sunrise:d.daily.sunrise[i].slice(11,16),sunset:d.daily.sunset[i].slice(11,16)})),health:{current:c,aqi:a.current?.european_aqi,pm25:a.current?.pm2_5,pm10:a.current?.pm10,grass:a.current?.grass_pollen,birch:a.current?.birch_pollen,alder:a.current?.alder_pollen,mugwort:a.current?.mugwort_pollen}};
-    status.textContent=`Actuele gegevens geladen van Open-Meteo · ${lat.toFixed(3)}, ${lon.toFixed(3)}.`;renderWeather();
-  }catch(e){status.textContent='Weer kon niet worden geladen. Controleer internetverbinding en plaats/coördinaten. Er worden geen voorspellingen verzonnen.';weatherLoaded=null;renderWeather()}
+    let lat=Number($('#weather-lat').value),lon=Number($('#weather-lon').value);
+    const place=$('#weather-place').value.trim();
+    const weatherUrl=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&daily=temperature_2m_max,temperature_2m_min`;
+    const [r]=await Promise.all([fetch(weatherUrl)]);
+    if(!r.ok)throw Error('Weerbron niet bereikbaar');
+    const d=await r.json();
+    weatherLoaded={current:[{icon:'🌡️',label:'Temperatuur',value:`${d.current.temperature_2m}°C`}]};
+    status.textContent='Weergegevens geladen';
+    renderWeather();
+  }catch(e){
+    status.textContent='Weer kon niet worden geladen.';
+    weatherLoaded=null;
+    renderWeather();
+  }
 }
-function renderMeals(){const el=$('#meal-list');el.innerHTML=state.meals.sort((a,b)=>a.date.localeCompare(b.date)).map(x=>`<li class="list-card"><div><strong>${esc(x.name)}</strong><small>${esc(x.date)} · ${esc(x.person||'Samen')}</small></div><button class="icon-button delete-generic" data-type="meals" data-id="${x.id}">×</button></li>`).join('')||'<li class="empty-row">Plan je eerste maaltijd.</li>'}
-function renderGroceries(){const el=$('#grocery-list');el.innerHTML=state.groceries.map(x=>`<li class="task-row ${x.done?'is-done':''}" data-id="${x.id}"><input class="grocery-check" type="checkbox" ${x.done?'checked':''}><span class="task-label"><strong>${esc(x.name)}</strong><small>${esc(x.category)} · ${esc(x.person||'Samen')}</small></span><button class="icon-button delete-generic" data-type="groceries" data-id="${x.id}">×</button></li>`).join('')||'<li class="empty-row">Boodschappenlijst is leeg.</li>'}
-function renderStock(){const el=$('#stock-list');el.innerHTML=state.stock.map(x=>`<li class="list-card ${Number(x.amount)<=Number(x.min||0)?'warning':''}"><div><strong>${esc(x.name)}</strong><small>${esc(x.amount)} ${esc(x.unit||'stuks')} · minimum ${esc(x.min||0)}</small></div><button class="icon-button delete-generic" data-type="stock" data-id="${x.id}">×</button></li>`).join('')||'<li class="empty-row">Nog geen voorraad.</li>'}
-function renderHome(){const el=$('#home-list');el.innerHTML=state.home.map(x=>`<li class="list-card"><div><strong>${esc(x.title)}</strong><small>${esc(x.type)} · ${esc(x.person||'Samen')} · ${esc(x.frequency||'eenmalig')}</small></div><button class="icon-button delete-generic" data-type="home" data-id="${x.id}">×</button></li>`).join('')||'<li class="empty-row">Nog geen woningtaken.</li>'}
-function renderBudget(){const b=state.budget;$('#budget-spent').textContent=`€ ${Number(b.spent||0).toFixed(2)}`;$('#budget-limit').textContent=`€ ${Number(b.monthly||0).toFixed(2)}`;$('#budget-bar').style.width=b.monthly?`${Math.min(100,b.spent/b.monthly*100)}%`:'0%';$('#budget-list').innerHTML=(b.items||[]).map(x=>`<li class="list-card"><div><strong>${esc(x.name)}</strong><small>€ ${Number(x.amount).toFixed(2)} · ${esc(x.category)}</small></div><button class="icon-button delete-generic" data-type="budget" data-id="${x.id}">×</button></li>`).join('')||'<li class="empty-row">Nog geen uitgaven.</li>'}
-function renderDates(){renderSimpleList('#dates-list',state.dates,'dates','Ideeën toevoegen voor jullie volgende moment samen.')}function renderTravel(){renderSimpleList('#travel-list',state.travel,'travel','Reizen, boekingen en checklists op één plek.')}function renderExtras(){renderSimpleList('#extras-list',state.extras,'extras','Notities, links en ideeën voor later.')}
-function renderSimpleList(selector,items,type,empty){const el=$(selector);el.innerHTML=items.map(x=>`<li class="list-card"><div><strong>${esc(x.title)}</strong><small>${esc(x.note||x.date||'')}</small></div><button class="icon-button delete-generic" data-type="${type}" data-id="${x.id}">×</button></li>`).join('')||`<li class="empty-row">${empty}</li>`}
 
-function euro(n){return `€ ${Number(n||0).toFixed(2).replace('.',',')}`}
-function fmtDate(v){return v?new Date(v+'T12:00').toLocaleDateString('nl-NL',{day:'numeric',month:'short',year:'numeric'}):'Niet ingesteld'}
-function daysUntil(v){if(!v)return null;return Math.ceil((new Date(v+'T12:00')-new Date(todayKey()+'T12:00'))/86400000)}
+function renderMeals(){
+  const el=$('#meal-list');
+  el.innerHTML=state.meals.sort((a,b)=>a.date.localeCompare(b.date)).map(x=>`<li class="list-card"><div><strong>${esc(x.name)}</strong><small>${x.date} · ${personAvatar(x.person)}</small></div><button class="icon-button" data-delete-item="meals" data-id="${x.id}">✕</button></li>`).join('')||'<li class="empty-row">Geen maaltijden gepland.</li>';
+}
+
+function renderGroceries(){
+  const el=$('#grocery-list');
+  el.innerHTML=state.groceries.map(x=>`<li class="task-row ${x.done?'is-done':''}" data-id="${x.id}"><input class="grocery-check" type="checkbox" ${x.done?'checked':''} title="Afvinken"><span class="person-badge">${personAvatar(x.person)}</span><div class="task-content"><span class="task-text">${esc(x.name)}</span><small>${esc(x.category)}</small></div><button class="icon-button delete-task" data-id="${x.id}" type="button">✕</button></li>`).join('')||'<li class="empty-row">Geen boodschappen.</li>';
+}
+
+function renderStock(){
+  const el=$('#stock-list');
+  el.innerHTML=state.stock.map(x=>`<li class="list-card ${Number(x.amount)<=Number(x.min||0)?'warning':''}"><div><strong>${esc(x.name)}</strong><small>${x.amount} ${x.unit} ${x.min?`(min: ${x.min})`:''}(min: 0)'}</small></div><button class="icon-button" data-delete-item="stock" data-id="${x.id}">✕</button></li>`).join('')||'<li class="empty-row">Geen voorraad.</li>';
+}
+
+function renderHome(){
+  const el=$('#home-list');
+  el.innerHTML=state.home.map(x=>`<li class="list-card"><div><strong>${esc(x.title)}</strong><small>${esc(x.type)} · ${personAvatar(x.person)} · ${esc(x.frequency)}</small></div><button class="icon-button" data-delete-item="home" data-id="${x.id}">✕</button></li>`).join('')||'<li class="empty-row">Geen wooningstaken.</li>';
+}
+
+function renderBudget(){
+  const b=state.budget;
+  $('#budget-spent').textContent=`€ ${Number(b.spent||0).toFixed(2)}`;
+  $('#budget-limit').textContent=`€ ${Number(b.monthly||0).toFixed(2)}`;
+  const pct=b.monthly?Math.min(100,(b.spent/b.monthly)*100):0;
+  $('#budget-progress').style.width=pct+'%';
+  $('#budget-list').innerHTML=(b.items||[]).map(x=>`<li class="list-card"><div><strong>${esc(x.description)}</strong><small>€${Number(x.amount).toFixed(2)}</small></div><button class="icon-button" data-delete-item="budget" data-id="${x.id}">✕</button></li>`).join('')||'<li class="empty-row">Geen uitgaven.</li>';
+}
+
+function renderDates(){
+  renderSimpleList('#dates-list',state.dates,'dates','Ideeën toevoegen voor jullie volgende moment samen.');
+}
+
+function renderTravel(){
+  renderSimpleList('#travel-list',state.travel,'travel','Voeg hier jullie reizen in.');
+}
+
+function renderExtras(){
+  renderSimpleList('#extras-list',state.extras,'extras','Notities en ideeën.');
+}
+
+function renderSimpleList(selector,items,type,empty){
+  const el=$(selector);
+  el.innerHTML=items.map(x=>`<li class="list-card"><div><strong>${esc(x.title)}</strong><small>${esc(x.note||x.date||'')}</small></div><button class="icon-button" data-delete-item="${type}" data-id="${x.id}">✕</button></li>`).join('')||`<li class="empty-row">${empty}</li>`;
+}
+
 function renderCar(){
   const c=state.car||{};
-  $('#car-model-display').textContent=c.model||'Nog niet ingevuld'; $('#car-plate-display').textContent=c.plate||'—'; $('#car-year-display').textContent=c.year||'—'; $('#car-mileage-display').textContent=c.mileage?`${Number(c.mileage).toLocaleString('nl-NL')} km`:'—';
-  $('#car-model').value=c.model||''; $('#car-plate').value=c.plate||''; $('#car-year').value=c.year||''; $('#car-mileage').value=c.mileage||'';
-  $('#car-apk-date').value=c.apkDate||''; $('#car-insurance-date').value=c.insuranceDate||''; $('#car-apk-display').textContent=fmtDate(c.apkDate); $('#car-insurance-display').textContent=fmtDate(c.insuranceDate);
-  const alerts=[]; [['APK',c.apkDate],['Verzekering',c.insuranceDate]].forEach(([label,date])=>{const d=daysUntil(date); if(d===null) alerts.push(`<div class="list-card warning"><div><strong>${label}</strong><small>Datum nog niet ingesteld.</small></div></div>`); else alerts.push(`<div class="list-card ${d<=30?'warning':''}"><div><strong>${label} · ${fmtDate(date)}</strong><small>${d<0?`Verlopen sinds ${Math.abs(d)} dagen`:d===0?'Vandaag':`Nog ${d} dagen`}</small></div></div>`)});
-  $('#car-alerts').innerHTML=alerts.join('');
-  $('#car-maintenance-list').innerHTML=(c.maintenance||[]).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(x=>`<li class="list-card"><div><strong>${esc(x.title)}</strong><small>${fmtDate(x.date)}${x.km?` · ${Number(x.km).toLocaleString('nl-NL')} km`:''}${x.cost?` · ${euro(x.cost)}`:''}</small></div><button class="icon-button delete-generic" data-type="car-maintenance" data-id="${x.id}">×</button></li>`).join('')||'<li class="empty-row">Nog geen onderhoud geregistreerd.</li>';
-  $('#car-fuel-list').innerHTML=(c.fuel||[]).slice().sort((a,b)=>String(b.date).localeCompare(String(a.date))).map(x=>`<li class="list-card"><div><strong>${fmtDate(x.date)} · ${Number(x.liters).toFixed(1).replace('.',',')} L</strong><small>${x.price?`${euro(x.price)}/L · totaal ${euro(Number(x.liters)*Number(x.price))}`:''}${x.km?` · ${Number(x.km).toLocaleString('nl-NL')} km`:''}</small></div><button class="icon-button delete-generic" data-type="car-fuel" data-id="${x.id}">×</button></li>`).join('')||'<li class="empty-row">Nog geen tankbeurten.</li>';
-  const costs=c.costs||[]; const fuelCost=(c.fuel||[]).reduce((a,x)=>a+Number(x.liters||0)*Number(x.price||0),0); $('#car-fuel-cost').textContent=euro(fuelCost); $('#car-year-cost').textContent=euro(costs.reduce((a,x)=>a+Number(x.amount||0),0)+fuelCost);
-  $('#car-cost-list').innerHTML=costs.slice().reverse().map(x=>`<li class="list-card"><div><strong>${esc(x.name)}</strong><small>${esc(x.category)} · ${euro(x.amount)}</small></div><button class="icon-button delete-generic" data-type="car-costs" data-id="${x.id}">×</button></li>`).join('')||'<li class="empty-row">Nog geen auto-uitgaven.</li>';
+  $('#car-model-display').textContent=c.model||'Nog niet ingevuld';
+  $('#car-plate-display').textContent=c.plate||'—';
+  $('#car-year-display').textContent=c.year||'—';
+  $('#car-model').value=c.model||'';
+  $('#car-plate').value=c.plate||'';
+  $('#car-year').value=c.year||'';
 }
 
-function renderSettings(){const backup=JSON.stringify(state,null,2);$('#settings-summary').textContent=`${state.tasks.length} taken · ${state.groceries.length} boodschappen · ${state.meals.length} maaltijden · ${state.history.length} historie-items`;$('#theme-select').value=state.theme;$('#appearance-select').value=state.appearance||'normal';$('#minimal-color').value=state.minimalColor||'#315f86';$('#minimal-color-row').hidden=(state.appearance||'normal')!=='minimal';$('#notification-toggle').checked=state.notifications;$('#backup-output').value=backup}
-function addGeneric(type,obj){state[type].push({id:uid(),...obj});renderPage(state.currentPage);saveState()}
-function removeGeneric(type,id){const key=type==='budget'?'items':type; if(type==='budget'){state.budget.items=state.budget.items.filter(x=>x.id!==id);state.budget.spent=state.budget.items.reduce((a,x)=>a+Number(x.amount),0)}else if(state[key])state[key]=state[key].filter(x=>x.id!==id);renderPage(state.currentPage);saveState('Verwijderd')}
-function applyTheme(){const root=document.documentElement;const appearance=state.appearance||'normal';const color=state.minimalColor||'#315f86';root.dataset.theme=state.theme;root.dataset.appearance=appearance;if(appearance==='minimal'){root.style.setProperty('--blue',color);root.style.setProperty('--blue-soft',`color-mix(in srgb, ${color} 12%, var(--paper))`)}else{root.style.removeProperty('--blue');root.style.removeProperty('--blue-soft')}}
-function closeMenu(){$('.sidebar')?.classList.remove('is-open');$('#mobile-scrim')?.classList.remove('is-visible');$('#menu-toggle')?.setAttribute('aria-expanded','false')}
-function bindForms(){
-  $('#focus-form').onsubmit=e=>{e.preventDefault();state.focus=$('#focus-input').value.trim();$('#focus-input').value='';renderToday();saveState('Focus opgeslagen')};
-  $('#daily-answer-form').onsubmit=e=>{e.preventDefault();state.dailyAnswers=state.dailyAnswers||{};state.dailyAnswers[todayKey()]=$('#daily-answer').value.trim();renderToday();saveState('Antwoord van de dag bewaard')};
-  $('#task-form').onsubmit=e=>{e.preventDefault();addTask($('#task-input').value,$('#task-person').value,$('#task-category').value,$('#task-due').value||todayKey());$('#task-input').value=''};
-  $('#agenda-form').onsubmit=e=>{e.preventDefault();addGeneric('agenda',{title:$('#agenda-title').value,date:$('#agenda-date').value,person:$('#agenda-person').value});e.target.reset()};
-  $('#challenge-form').onsubmit=e=>{e.preventDefault();addGeneric('challenges',{title:$('#challenge-title').value,category:$('#challenge-category').value,target:Number($('#challenge-target').value),progress:0,points:Number($('#challenge-points').value),done:false,checkins:[]});e.target.reset()};
-  $('#deal-form').onsubmit=e=>{e.preventDefault();addGeneric('deals',{product:$('#deal-product').value.trim(),store:$('#deal-store').value.trim(),price:Number($('#deal-price').value),valid:$('#deal-valid').value,saved:true});e.target.reset()};
-  $('#program-form').onsubmit=e=>{e.preventDefault();addGeneric('programs',{title:$('#program-title').value.trim(),category:$('#program-category').value.trim(),steps:$('#program-steps').value.split(';').map(x=>x.trim()).filter(Boolean).map(text=>({text,done:false})),checkins:[]});e.target.reset()};
-  $('#meal-form').onsubmit=e=>{e.preventDefault();addGeneric('meals',{name:$('#meal-name').value,date:$('#meal-date').value,person:$('#meal-person').value});e.target.reset()};
-  $('#grocery-form').onsubmit=e=>{e.preventDefault();addGeneric('groceries',{name:$('#grocery-name').value,category:$('#grocery-category').value,person:$('#grocery-person').value,done:false});e.target.reset()};
-  $('#stock-form').onsubmit=e=>{e.preventDefault();addGeneric('stock',{name:$('#stock-name').value,amount:$('#stock-amount').value,unit:$('#stock-unit').value,min:$('#stock-min').value});e.target.reset()};
-  $('#home-form').onsubmit=e=>{e.preventDefault();addGeneric('home',{title:$('#home-title').value,type:$('#home-type').value,person:$('#home-person').value,frequency:$('#home-frequency').value});e.target.reset()};
-  $('#car-profile-form').onsubmit=e=>{e.preventDefault();state.car=state.car||{};Object.assign(state.car,{model:$('#car-model').value.trim(),plate:$('#car-plate').value.trim(),year:$('#car-year').value,mileage:$('#car-mileage').value});renderCar();saveState('Autogegevens opgeslagen')};
-  $('#car-dates-form').onsubmit=e=>{e.preventDefault();state.car=state.car||{};state.car.apkDate=$('#car-apk-date').value;state.car.insuranceDate=$('#car-insurance-date').value;renderCar();saveState('Autodatums opgeslagen')};
-  $('#car-maintenance-form').onsubmit=e=>{e.preventDefault();state.car=state.car||{};state.car.maintenance=state.car.maintenance||[];state.car.maintenance.push({id:uid(),title:$('#car-maintenance-title').value,date:$('#car-maintenance-date').value,km:$('#car-maintenance-km').value,cost:Number($('#car-maintenance-cost').value)||0});e.target.reset();renderCar();saveState('Onderhoud opgeslagen')};
-  $('#car-fuel-form').onsubmit=e=>{e.preventDefault();state.car=state.car||{};state.car.fuel=state.car.fuel||[];state.car.fuel.push({id:uid(),date:$('#car-fuel-date').value,liters:Number($('#car-fuel-liters').value),price:Number($('#car-fuel-price').value),km:$('#car-fuel-km').value});e.target.reset();renderCar();saveState('Tankbeurt opgeslagen')};
-  $('#car-cost-form').onsubmit=e=>{e.preventDefault();state.car=state.car||{};state.car.costs=state.car.costs||[];state.car.costs.push({id:uid(),name:$('#car-cost-name').value,amount:Number($('#car-cost-amount').value),category:$('#car-cost-category').value});e.target.reset();renderCar();saveState('Autokosten opgeslagen')};
-  $('#budget-form').onsubmit=e=>{e.preventDefault();const amount=Number($('#budget-amount').value)||0;state.budget.monthly=Number($('#budget-monthly').value)||state.budget.monthly;state.budget.items.unshift({id:uid(),name:$('#budget-name').value,amount,category:$('#budget-category').value});state.budget.spent=state.budget.items.reduce((a,x)=>a+Number(x.amount),0);renderBudget();saveState();e.target.reset()};
-  $('#simple-form').onsubmit=e=>{e.preventDefault();const page=state.currentPage;const map={dates:'dates',travel:'travel',extras:'extras'};const key=map[page];if(!key)return;addGeneric(key,{title:$('#simple-title').value,note:$('#simple-note').value,date:$('#simple-date').value});e.target.reset()};
+function renderSettings(){
+  const backup=JSON.stringify(state,null,2);
+  $('#settings-summary').textContent=`${state.tasks.length} taken · ${state.groceries.length} boodschappen · ${state.meals.length} maaltijden`;
+  $('#export-btn').onclick=()=>exportData();
+  $('#import-file').onchange=e=>importData(e.target.files[0]);
 }
-function handleClicks(e){if(e.target.closest('#program-import-open')){$('#program-import').click();return}const deal=e.target.closest('.deal-add');if(deal){const d=state.deals.find(x=>x.id===deal.dataset.id);if(d){state.groceries.unshift({id:uid(),name:d.product,category:'Aanbieding',person:'Samen',done:false,dealStore:d.store,dealPrice:d.price});saveState('Product toegevoegd aan boodschappenlijst');renderDeals()}return}const nav=e.target.closest('[data-page-link]');if(nav){e.preventDefault();showPage(nav.dataset.pageLink);return}const del=e.target.closest('.task-delete');if(del){deleteTask(del.closest('[data-id]').dataset.id);return}const generic=e.target.closest('.delete-generic');if(generic){removeGeneric(generic.dataset.type,generic.dataset.id);return}const challenge=e.target.closest('.challenge-progress');if(challenge){const c=state.challenges.find(x=>x.id===challenge.dataset.id);if(c){c.progress=Math.min(c.target,c.progress+1);c.done=c.progress>=c.target;renderChallenges();renderToday();saveState(c.done?'Challenge voltooid 🎉':'Voortgang opgeslagen')}return}if(e.target.matches('.streak-check')){const c=state.challenges.find(x=>x.id===e.target.dataset.id);if(c){c.checkins=c.checkins||[];const date=e.target.dataset.date,was=c.checkins.includes(date);c.checkins=e.target.checked?[...new Set([...c.checkins,date])]:c.checkins.filter(d=>d!==date);if(date===todayKey()&&e.target.checked&&!was){c.progress=Math.min(c.target,(c.progress||0)+1);c.done=c.progress>=c.target}else if(date===todayKey()&&!e.target.checked&&was){c.progress=Math.max(0,(c.progress||0)-1);c.done=c.progress>=c.target}renderChallenges();renderToday();saveState('Streak en punten bijgewerkt')}return}if(e.target.matches('.program-step-check')){const p=state.programs.find(x=>x.id===e.target.dataset.id);if(p){p.steps[Number(e.target.dataset.index)].done=e.target.checked;if(e.target.checked){p.checkins=p.checkins||[];if(!p.checkins.includes(todayKey()))p.checkins.push(todayKey())}renderPrograms();saveState('Programmastap bijgewerkt')}return}if(e.target.matches('.grocery-check')){const item=state.groceries.find(x=>x.id===e.target.closest('[data-id]').dataset.id);if(item){item.done=e.target.checked;renderGroceries();saveState()}}}
-function handleChanges(e){if(e.target.matches('.task-check'))toggleTask(e.target.closest('[data-id]').dataset.id);if(e.target.id==='theme-select'){state.theme=e.target.value;applyTheme();saveState('Thema aangepast')}if(e.target.id==='appearance-select'){state.appearance=e.target.value;applyTheme();renderSettings();saveState('Vormgeving aangepast')}if(e.target.id==='minimal-color'){state.minimalColor=e.target.value;applyTheme();saveState('Accentkleur aangepast')}if(e.target.id==='notification-toggle'){state.notifications=e.target.checked;saveState('Instelling opgeslagen')}}
-function setupDnD(){let dragged=null;document.addEventListener('dragstart',e=>{const row=e.target.closest('.task-row[draggable]');if(row)dragged=row});document.addEventListener('dragover',e=>{if(e.target.closest('.task-row[draggable]'))e.preventDefault()});document.addEventListener('drop',e=>{const target=e.target.closest('.task-row[draggable]');if(!dragged||!target||dragged===target)return;e.preventDefault();const a=state.tasks.findIndex(x=>x.id===dragged.dataset.id),b=state.tasks.findIndex(x=>x.id===target.dataset.id);const [item]=state.tasks.splice(a,1);state.tasks.splice(b,0,item);renderTasksPage();renderToday();saveState('Volgorde opgeslagen');dragged=null})}
-function exportData(){const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`samen-thuis-backup-${todayKey()}.json`;a.click();URL.revokeObjectURL(a.href)}
-function importData(file){const reader=new FileReader();reader.onload=()=>{try{state=merge(defaultState(),JSON.parse(reader.result));applyTheme();renderPage(state.currentPage);saveState('Back-up geïmporteerd')}catch{toast('Ongeldig back-upbestand')}};reader.readAsText(file)}
-function init(){applyTheme();bindForms();document.addEventListener('click',handleClicks);document.addEventListener('change',handleChanges);$$('[data-page-link]').forEach(()=>{});$('#menu-toggle').onclick=()=>{const open=$('.sidebar').classList.toggle('is-open');$('#mobile-scrim').classList.toggle('is-visible',open);$('#menu-toggle').setAttribute('aria-expanded',open)};$('#mobile-scrim').onclick=closeMenu;$('#quick-add-open').onclick=()=>$('#quick-add-dialog').showModal();$('#quick-add-dialog').addEventListener('click',e=>{if(e.target===e.currentTarget)e.currentTarget.close()});$$('.quick-add-options button').forEach(b=>b.onclick=()=>{const action=b.dataset.quickAction;$('#quick-add-dialog').close();showPage(action==='task'?'tasks':action==='focus'?'today':'extras');setTimeout(()=>$(action==='task'?'#task-input':action==='focus'?'#focus-input':'#simple-title')?.focus(),50)});$('#weather-form').onsubmit=e=>{e.preventDefault();loadWeather()};$('#weather-refresh').onclick=loadWeather;$('#program-import').onchange=e=>{const f=e.target.files[0];if(!f)return;const rd=new FileReader();rd.onload=()=>{try{const j=JSON.parse(rd.result);const items=Array.isArray(j)?j:(j.programs||[j]);items.forEach(x=>{if(!x.title||!Array.isArray(x.steps))throw Error();addGeneric('programs',{title:String(x.title),category:String(x.category||'Eigen'),steps:x.steps.map(s=>typeof s==='string'?{text:s,done:false}:{text:String(s.text||s.title||''),done:!!s.done}).filter(s=>s.text),checkins:[]})});toast('Programma-import voltooid')}catch{toast('Import mislukt. Verwacht JSON met title, category en steps.')}e.target.value=''};rd.readAsText(f)};$('#export-data').onclick=exportData;$('#import-file').onchange=e=>e.target.files[0]&&importData(e.target.files[0]);$('#clear-data').onclick=()=>{if(confirm('Alle lokale testdata wissen?')){state=defaultState();applyTheme();renderPage('today');saveState('Testdata gewist')}};$('#page-content').addEventListener('keydown',e=>{if(e.key==='Escape')closeMenu()});showPage(state.currentPage);renderDeals();renderPrograms();if(state.currentPage==='weather')loadWeather()}
+
+function addGeneric(type,obj){
+  state[type].push({id:uid(),...obj});
+  renderPage(state.currentPage);
+  saveState();
+}
+
+function removeGeneric(type,id){
+  if(type==='budget'){
+    state.budget.items=state.budget.items.filter(x=>x.id!==id);
+    state.budget.spent=state.budget.items.reduce((s,x)=>s+Number(x.amount||0),0);
+  }else{
+    state[type]=state[type].filter(x=>x.id!==id);
+  }
+  renderPage(state.currentPage);
+  saveState();
+}
+
+function applyTheme(){
+  const root=document.documentElement;
+  const appearance=state.appearance||'normal';
+  const color=state.minimalColor||'#315f86';
+  root.dataset.theme=state.theme;
+  root.dataset.appearance=appearance;
+  root.style.setProperty('--custom-color',color);
+}
+
+function closeMenu(){
+  $('.sidebar')?.classList.remove('is-open');
+  $('#mobile-scrim')?.classList.remove('is-visible');
+  $('#menu-toggle')?.setAttribute('aria-expanded','false');
+}
+
+function bindForms(){
+  $('#focus-form')&&($('#focus-form').onsubmit=e=>{e.preventDefault();state.focus=$('#focus-input').value.trim();$('#focus-input').value='';renderToday();saveState('Focus opgeslagen')});
+  
+  $('#task-form')&&($('#task-form').onsubmit=e=>{e.preventDefault();addTask($('#task-input').value,$('#task-person').value,$('#task-category').value,$('#task-due').value||todayKey());$('#task-input').value=''});
+  
+  $('#agenda-form')&&($('#agenda-form').onsubmit=e=>{e.preventDefault();addGeneric('agenda',{title:$('#agenda-title').value,date:$('#agenda-date').value,person:$('#agenda-person').value});e.target.reset()});
+  
+  $('#challenge-form')&&($('#challenge-form').onsubmit=e=>{e.preventDefault();addGeneric('challenges',{title:$('#challenge-title').value,category:$('#challenge-category').value,target:Number($('#challenge-target').value)||1,progress:0,points:Number($('#challenge-points').value)||10,done:false,checkins:[]});e.target.reset()});
+  
+  $('#deal-form')&&($('#deal-form').onsubmit=e=>{e.preventDefault();addGeneric('deals',{product:$('#deal-product').value.trim(),store:$('#deal-store').value.trim(),price:Number($('#deal-price').value),valid:$('#deal-valid').value});e.target.reset()});
+  
+  $('#program-form')&&($('#program-form').onsubmit=e=>{e.preventDefault();addGeneric('programs',{title:$('#program-title').value.trim(),category:$('#program-category').value.trim(),steps:$('#program-steps').value.split('\n').map(s=>s.trim()).filter(Boolean)});e.target.reset()});
+  
+  $('#meal-form')&&($('#meal-form').onsubmit=e=>{e.preventDefault();addGeneric('meals',{name:$('#meal-name').value,date:$('#meal-date').value,person:$('#meal-person').value});e.target.reset()});
+  
+  $('#grocery-form')&&($('#grocery-form').onsubmit=e=>{e.preventDefault();addGeneric('groceries',{name:$('#grocery-name').value,category:$('#grocery-category').value,person:$('#grocery-person').value,done:false});e.target.reset()});
+  
+  $('#stock-form')&&($('#stock-form').onsubmit=e=>{e.preventDefault();addGeneric('stock',{name:$('#stock-name').value,amount:$('#stock-amount').value,unit:$('#stock-unit').value,min:$('#stock-min').value});e.target.reset()});
+  
+  $('#home-form')&&($('#home-form').onsubmit=e=>{e.preventDefault();addGeneric('home',{title:$('#home-title').value,type:$('#home-type').value,person:$('#home-person').value,frequency:$('#home-frequency').value});e.target.reset()});
+  
+  $('#car-profile-form')&&($('#car-profile-form').onsubmit=e=>{e.preventDefault();state.car=state.car||{};Object.assign(state.car,{model:$('#car-model').value.trim(),plate:$('#car-plate').value.trim(),year:$('#car-year').value});renderCar();saveState()});
+  
+  $('#budget-form')&&($('#budget-form').onsubmit=e=>{e.preventDefault();const amount=Number($('#budget-amount').value)||0;state.budget.monthly=Number($('#budget-monthly').value)||state.budget.monthly;state.budget.items=state.budget.items||[];state.budget.items.push({id:uid(),description:$('#budget-desc').value,amount});state.budget.spent=(state.budget.spent||0)+amount;renderBudget();saveState();e.target.reset()});
+  
+  $('#simple-form')&&($('#simple-form').onsubmit=e=>{e.preventDefault();const page=state.currentPage;const map={dates:'dates',travel:'travel',extras:'extras'};const key=map[page];if(!key)return;addGeneric(key,{title:$('#simple-title').value,note:$('#simple-note').value});e.target.reset()});
+  
+  $('#question-form')&&($('#question-form').onsubmit=e=>{e.preventDefault();const person=$('#question-person').value;const answer=$('#question-answer').value.trim();if(!answer)return;state.dailyAnswers=state.dailyAnswers||{};state.dailyAnswers[todayKey()]=state.dailyAnswers[todayKey()]||{};state.dailyAnswers[todayKey()][person]=answer;renderToday();saveState(`${person} antwoord opgeslagen`);$('#question-dialog').close()});
+}
+
+function handleClicks(e){
+  if(e.target.closest('[data-page-link]')){const page=e.target.closest('[data-page-link]').dataset.pageLink;showPage(page);renderPage(page);closeMenu();return}
+  if(e.target.closest('[data-delete-item]')){const btn=e.target.closest('[data-delete-item]');removeGeneric(btn.dataset.deleteItem,btn.dataset.id);return}
+  if(e.target.classList.contains('delete-task')){deleteTask(e.target.dataset.id);return}
+  if(e.target.hasAttribute('data-answer-person')){openQuestion(e.target.dataset.answerPerson);return}
+  if(e.target.hasAttribute('data-check-challenge')){const c=state.challenges.find(x=>x.id===e.target.dataset.checkChallenge);if(c){c.checkins=c.checkins||[];if(!c.checkins.includes(todayKey()))c.checkins.push(todayKey());c.progress=Math.min(c.target,c.checkins.length);renderChallenges();saveState('Challenge geupdatet')}return}
+  if(e.target.closest('[data-close-dialog]')){$('#question-dialog').close();return}
+  if(e.target.id==='menu-toggle'){$('.sidebar').classList.toggle('is-open');$('#mobile-scrim').classList.toggle('is-visible');return}
+  if(e.target.id==='mobile-scrim'){closeMenu();return}
+}
+
+function handleChanges(e){
+  if(e.target.classList.contains('task-check')){toggleTask(e.target.closest('[data-id]').dataset.id);return}
+  if(e.target.classList.contains('grocery-check')){const g=state.groceries.find(x=>x.id===e.target.closest('[data-id]').dataset.id);if(g)g.done=e.target.checked;renderGroceries();saveState();return}
+  if(e.target.id==='theme-select'){state.theme=e.target.value;applyTheme();saveState();return}
+  if(e.target.id==='appearance-select'){state.appearance=e.target.value;applyTheme();saveState();return}
+  if(e.target.id==='minimal-color'){state.minimalColor=e.target.value;applyTheme();saveState();$('#minimal-color-row').hidden=state.appearance!=='minimal';return}
+}
+
+function setupDnD(){
+  let dragged=null;
+  let draggedFrom=-1;
+  document.addEventListener('dragstart',e=>{
+    const row=e.target.closest('.task-row[draggable]');
+    if(row){dragged=row;draggedFrom=parseInt(row.dataset.index);e.dataTransfer.effectAllowed='move'}
+  });
+  document.addEventListener('dragover',e=>{
+    if(dragged){e.preventDefault();e.dataTransfer.dropEffect='move'}
+  });
+  document.addEventListener('drop',e=>{
+    if(!dragged)return;
+    e.preventDefault();
+    const dropZone=e.target.closest('.task-row[draggable]');
+    if(!dropZone)return;
+    const draggedTo=parseInt(dropZone.dataset.index);
+    if(draggedFrom===draggedTo)return;
+    const [removed]=[...state.tasks].splice(draggedFrom,1);
+    state.tasks.splice(draggedTo,0,removed);
+    renderTasksPage();
+    saveState('Taak verplaatst');
+  });
+  document.addEventListener('dragend',()=>{dragged=null;draggedFrom=-1});
+}
+
+function exportData(){
+  const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`samen-thuis-backup-${todayKey()}.json`;
+  a.click();
+  toast('Backup gedownload');
+}
+
+function importData(file){
+  if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      state=merge(defaultState(),JSON.parse(reader.result));
+      applyTheme();
+      renderPage(state.currentPage);
+      saveState('Backup geïmporteerd');
+      renderSettings();
+    }catch(e){
+      toast('Backup kon niet worden geladen');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function init(){
+  applyTheme();
+  bindForms();
+  setupDnD();
+  document.addEventListener('click',handleClicks);
+  document.addEventListener('change',handleChanges);
+  showPage(state.currentPage);
+  renderPage(state.currentPage);
+  loadBrainyQuote();
+  $('#minimal-color-row').hidden=state.appearance!=='minimal';
+  if($('#theme-select'))$('#theme-select').value=state.theme;
+  if($('#appearance-select'))$('#appearance-select').value=state.appearance;
+  if($('#minimal-color'))$('#minimal-color').value=state.minimalColor;
+}
+
 document.addEventListener('DOMContentLoaded',init);
