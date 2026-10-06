@@ -374,6 +374,13 @@
     gap: 4px;
     padding: 6px;
     min-height: auto;
+    font-size: 0.87rem;
+  }
+  .nav-item span {
+    font-size: 0.87rem;
+  }
+  .nav-item:not(.is-active) {
+    font-size: 0.87rem;
   }
   .nav-icon {
     width: auto;
@@ -390,7 +397,7 @@
 
   .sidebar {
     position: fixed;
-    z-index: 40;
+    z-index: 50;
     top: 0;
     bottom: 0;
     left: 0;
