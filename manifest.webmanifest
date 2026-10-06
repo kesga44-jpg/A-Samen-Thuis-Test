@@ -1,0 +1,10 @@
+{
+  "name": "Samen Thuis v2 — Testomgeving",
+  "short_name": "Samen Thuis v2",
+  "description": "Nieuwe local-first testomgeving voor Samen Thuis v2.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0d273e",
+  "theme_color": "#0d273e",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
