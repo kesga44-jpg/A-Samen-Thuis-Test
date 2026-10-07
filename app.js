@@ -2,7 +2,7 @@ const STORAGE_KEY = 'samenThuisV2';
 const QUOTE_KEY = 'samenThuisV2-quote';
 const PEOPLE = ['Kees', 'Daphne', 'Samen'];
 const PAGES = {
-  today: 'Vandaag', tasks: 'Taken', agenda: 'Agenda', challenges: 'Challenges', programs: "Programma's",
+  today: 'Vandaag', weather: 'Weer', tasks: 'Taken', agenda: 'Agenda', challenges: 'Challenges', programs: "Programma's",
   mealplan: 'Weekmenu', groceries: 'Boodschappen', deals: 'Acties & aanbiedingen', stock: 'Voorraad',
   home: 'Woning', car: 'Auto', budget: 'Budget', dates: 'Date ideeën', travel: 'Reizen', extras: 'Extra', settings: 'Instellingen'
 };
@@ -80,40 +80,33 @@ function saveState(message = '') {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     const s = $('#saveState'); if (s) s.textContent = 'Lokaal bewaard';
     if (message) toast(message);
+    scheduleSync();
     return true;
   } catch { toast('Opslag niet beschikbaar'); return false; }
 }
 
 /* ---------- Quote ---------- */
+const QUOTE_URL = 'https://www.brainyquote.com/link/quotebr.rss';
+const QUOTE_FALLBACK = '<p class="quote-note muted">De quote van vandaag is nu niet beschikbaar (offline of bron onbereikbaar). Probeer het later opnieuw.</p>';
 function readCachedQuote() {
-  try { const c = JSON.parse(localStorage.getItem(QUOTE_KEY) || 'null'); return c && c.date === todayKey() && c.text ? c : null; }
+  try { const c = JSON.parse(localStorage.getItem(QUOTE_KEY) || 'null'); return c && c.date === todayKey() && c.html ? c : null; }
   catch { return null; }
+}
+function quoteMarkup(q) {
+  return `<blockquote class="daily-quote">${esc(q.text)}</blockquote>${q.author ? `<p class="muted">— ${esc(q.author)}</p>` : ''}`;
 }
 function quoteBodyMarkup() {
   const c = readCachedQuote();
-  return c
-    ? `<blockquote>${esc(c.text)}</blockquote>${c.author ? `<p class="muted">— ${esc(c.author)}</p>` : ''}`
-    : '<p class="quote-note muted">De quote van vandaag is nu niet beschikbaar. Probeer het later opnieuw.</p>';
+  return c ? c.html : QUOTE_FALLBACK;
 }
 function renderQuote() {
-  const body = quoteBodyMarkup();
-  return `<section class="panel quote-panel"><div class="panel-heading"><div><p class="eyebrow">Dagelijkse inspiratie</p><h2>Quote van de dag</h2></div><span class="panel-icon">✦</span></div><div id="quoteBody">${body}</div></section>`;
-}
-function parseQuoteFromDom() {
-  const src = $('#brainyQuoteSource');
-  if (!src) return null;
-  const links = $$('a', src).map(a => a.textContent.trim()).filter(t => t && !/more quotes/i.test(t));
-  if (links.length) return { text: links[0], author: links[1] || '' };
-  const clone = src.cloneNode(true);
-  $$('script,a', clone).forEach(n => n.remove());
-  const text = clone.textContent.trim();
-  return text ? { text, author: '' } : null;
+  return `<section class="panel quote-panel"><div class="panel-heading"><div><p class="eyebrow">Dagelijkse inspiratie</p><h2>Quote van de dag</h2></div><span class="panel-icon">✦</span></div><div id="quoteBody">${quoteBodyMarkup()}</div></section>`;
 }
 async function fetchQuoteFromRss() {
   const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = ctrl && setTimeout(() => ctrl.abort(), 6000);
   try {
-    const res = await fetch('https://www.brainyquote.com/link/quotebr.rss', { signal: ctrl && ctrl.signal });
+    const res = await fetch(QUOTE_URL, { signal: ctrl && ctrl.signal });
     if (!res.ok) return null;
     const xml = new DOMParser().parseFromString(await res.text(), 'application/xml');
     const item = xml.querySelector('item');
@@ -126,15 +119,123 @@ async function fetchQuoteFromRss() {
   } catch { return null; }
   finally { if (timer) clearTimeout(timer); }
 }
+let quoteLoading = false;
 async function captureBrainyQuote() {
   if (readCachedQuote()) return true;
-  let q = null;
-  try { q = parseQuoteFromDom() || await fetchQuoteFromRss(); } catch { q = null; }
-  if (!q || !q.text) return false;
-  try { localStorage.setItem(QUOTE_KEY, JSON.stringify({ date: todayKey(), text: q.text, author: q.author })); } catch { /* cache niet beschikbaar */ }
-  const box = $('#quoteBody');
-  if (box) box.innerHTML = quoteBodyMarkup();
-  return true;
+  if (quoteLoading || navigator.onLine === false) return false;
+  quoteLoading = true;
+  try {
+    const q = await fetchQuoteFromRss();
+    if (!q) return false;
+    const html = quoteMarkup(q);
+    try { localStorage.setItem(QUOTE_KEY, JSON.stringify({ date: todayKey(), html })); } catch { /* cache niet beschikbaar */ }
+    const box = $('#quoteBody');
+    if (box) box.innerHTML = html;
+    return true;
+  } finally { quoteLoading = false; }
+}
+
+/* ---------- Weer ---------- */
+const WEATHER_KEY = 'samenThuisV2-weather';
+const WEATHER_CODES = { 0: 'Helder', 1: 'Overwegend helder', 2: 'Half bewolkt', 3: 'Bewolkt', 45: 'Mist', 48: 'Rijpmist', 51: 'Lichte motregen', 53: 'Motregen', 55: 'Zware motregen', 61: 'Lichte regen', 63: 'Regen', 65: 'Zware regen', 71: 'Lichte sneeuw', 73: 'Sneeuw', 75: 'Zware sneeuw', 80: 'Regenbuien', 81: 'Regenbuien', 82: 'Zware buien', 95: 'Onweer', 96: 'Onweer met hagel', 99: 'Zwaar onweer' };
+function readWeather() {
+  try { const w = JSON.parse(localStorage.getItem(WEATHER_KEY) || 'null'); return w && w.days ? w : null; }
+  catch { return null; }
+}
+function weatherBodyMarkup() {
+  const w = readWeather();
+  if (!w) return '<p class="quote-note muted">Het weer is nu niet beschikbaar (offline of bron onbereikbaar).</p>';
+  const cfg = config();
+  const day = d => `<article class="challenge-card"><div class="challenge-main"><p class="eyebrow">${esc(new Date(d.date).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'short' }))}</p><h3>${esc(WEATHER_CODES[d.code] || 'Onbekend')}</h3><p class="muted">${Math.round(d.min)}° / ${Math.round(d.max)}° · regen ${Math.round(d.rain || 0)}%</p></div></article>`;
+  return `<p class="muted">${esc(cfg.weatherCity)} · bijgewerkt ${esc(new Date(w.fetched).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }))}</p><div class="challenge-grid">${w.days.map(day).join('')}</div>`;
+}
+function renderWeather() {
+  return `<section class="panel" id="page-weather"><div class="panel-heading"><div><p class="eyebrow">Weeroverzicht</p><h2>Weer</h2></div><button class="button button-secondary button-small" data-action="refresh-weather">Vernieuwen</button></div><div id="weatherBody">${weatherBodyMarkup()}</div></section>`;
+}
+async function fetchWeather() {
+  const cfg = config();
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctrl && setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const geo = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=1&language=nl&name=${encodeURIComponent(cfg.weatherCity)}`, { signal: ctrl && ctrl.signal })).json();
+    const loc = geo.results && geo.results[0];
+    if (!loc) return false;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=5`;
+    const res = await fetch(url, { signal: ctrl && ctrl.signal });
+    if (!res.ok) return false;
+    const d = (await res.json()).daily;
+    if (!d || !d.time) return false;
+    const days = d.time.map((date, i) => ({ date, code: d.weathercode[i], max: d.temperature_2m_max[i], min: d.temperature_2m_min[i], rain: d.precipitation_probability_max[i] }));
+    try { localStorage.setItem(WEATHER_KEY, JSON.stringify({ city: cfg.weatherCity, fetched: Date.now(), days })); } catch { /* cache niet beschikbaar */ }
+    return true;
+  } catch { return false; }
+  finally { if (timer) clearTimeout(timer); }
+}
+async function loadWeather(force) {
+  const w = readWeather();
+  if (!force && w && w.city === config().weatherCity && Date.now() - w.fetched < 3600000) return;
+  if (navigator.onLine === false) { if (force) toast('Offline: weer niet vernieuwd'); return; }
+  const ok = await fetchWeather();
+  const box = $('#weatherBody');
+  if (box) box.innerHTML = weatherBodyMarkup();
+  if (force) toast(ok ? 'Weer vernieuwd' : 'Weer kon niet worden geladen');
+}
+
+/* ---------- Instellingen & synchronisatie (Supabase, optioneel) ---------- */
+const CONFIG_KEY = 'samenThuisV2-config';
+const SYNC_TABLE = 'household_state';
+let cfgCache;
+function config() {
+  if (cfgCache) return cfgCache;
+  let c = {};
+  try { c = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}') || {}; } catch { c = {}; }
+  return (cfgCache = { supabaseUrl: '', supabaseKey: '', household: '', weatherCity: 'Amsterdam', updatedAt: '', ...c });
+}
+function saveConfig(patch) {
+  cfgCache = { ...config(), ...patch };
+  try { localStorage.setItem(CONFIG_KEY, JSON.stringify(cfgCache)); return true; } catch { toast('Opslag niet beschikbaar'); return false; }
+}
+function syncEnabled() { const c = config(); return !!(c.supabaseUrl && c.supabaseKey && c.household); }
+function setSyncState(text) { const el = $('#syncState'); if (el) el.textContent = text; }
+function syncRequest(path, options = {}) {
+  const c = config();
+  const base = c.supabaseUrl.replace(/\/+$/, '');
+  if (!/^https:\/\//i.test(base)) throw new Error('URL moet met https:// beginnen');
+  return fetch(`${base}/rest/v1/${SYNC_TABLE}${path}`, { ...options, headers: { apikey: c.supabaseKey, Authorization: 'Bearer ' + c.supabaseKey, 'Content-Type': 'application/json', ...(options.headers || {}) } });
+}
+async function pushState() {
+  const updatedAt = new Date().toISOString();
+  const res = await syncRequest('?on_conflict=household_code', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ household_code: config().household, data: state, updated_at: updatedAt }) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  saveConfig({ updatedAt });
+}
+async function syncNow(manual) {
+  if (!syncEnabled()) { setSyncState('Alleen dit apparaat'); if (manual) toast('Vul eerst de synchronisatie-instellingen in'); return; }
+  if (navigator.onLine === false) { setSyncState('Offline'); return; }
+  setSyncState('Synchroniseren…');
+  try {
+    const res = await syncRequest(`?household_code=eq.${encodeURIComponent(config().household)}&select=data,updated_at`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const row = (await res.json())[0];
+    if (row && row.data && row.updated_at > (config().updatedAt || '')) {
+      state = merge(defaultState(), row.data);
+      saveConfig({ updatedAt: row.updated_at });
+      applyTheme();
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* lokaal niet beschikbaar */ }
+      renderPage(state.currentPage);
+    } else await pushState();
+    setSyncState('Gesynchroniseerd');
+    if (manual) toast('Gesynchroniseerd');
+  } catch (err) { setSyncState('Sync mislukt'); if (manual) toast(`Synchronisatie mislukt: ${err.message}`); }
+}
+let syncTimer;
+function scheduleSync() {
+  if (!syncEnabled()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    if (navigator.onLine === false) return setSyncState('Offline');
+    try { await pushState(); setSyncState('Gesynchroniseerd'); } catch { setSyncState('Sync mislukt'); }
+  }, 1500);
 }
 
 /* ---------- Pagina's ---------- */
@@ -177,9 +278,22 @@ function renderCar() {
   return `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Auto</p><h2>Autogegevens</h2></div></div><form class="stack-form form-grid" data-car-form>${CAR_FIELDS.map(([k, l, t]) => `<div class="field"><label>${l}<input name="${k}" type="${t || 'text'}" value="${esc(state.car[k] || '')}"></label></div>`).join('')}<button class="button button-primary">Opslaan</button></form></section>`;
 }
 function renderSettings() {
+  const c = config();
+  const sel = (key, opts) => opts.map(([v, l]) => `<option value="${v}" ${state[key] === v ? 'selected' : ''}>${l}</option>`).join('');
   return `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Weergave</p><h2>Instellingen</h2></div></div>
-    <div class="setting-row"><label>Thema <select data-setting="theme"><option value="light" ${state.theme === 'light' ? 'selected' : ''}>Licht</option><option value="dark" ${state.theme === 'dark' ? 'selected' : ''}>Donker</option></select></label></div>
-    <p class="small-note">Gegevens worden lokaal in je browser bewaard. Gebruik de knoppen links voor een back-up.</p></section>`;
+    <div class="setting-row"><label>Thema <select data-setting="theme">${sel('theme', [['light', 'Licht'], ['dark', 'Donker']])}</select></label></div>
+    <div class="setting-row"><label>Vormgeving <select data-setting="appearance">${sel('appearance', [['normal', 'Normaal'], ['minimal', 'Minimaal']])}</select></label></div>
+    <div class="setting-row"><label>Accentkleur (minimaal) <input type="color" data-setting="minimalColor" value="${esc(state.minimalColor)}"></label></div>
+    <form class="stack-form" data-weather-form><div class="setting-row"><label>Plaats voor het weer <input name="weatherCity" value="${esc(c.weatherCity)}" required maxlength="80"></label><button class="button button-secondary">Opslaan</button></div></form>
+    <p class="small-note">Gegevens worden lokaal in je browser bewaard. Gebruik de knoppen links voor een back-up.</p></section>
+    <section class="panel" id="syncPanel"><div class="panel-heading"><div><p class="eyebrow">Optioneel</p><h2>Synchronisatie (Supabase)</h2></div></div>
+    <form class="stack-form" data-sync-form autocomplete="off">
+      <div class="field"><label>Project-URL<input name="supabaseUrl" type="url" placeholder="https://xyz.supabase.co" value="${esc(c.supabaseUrl)}"></label></div>
+      <div class="field"><label>Publishable / anon key<input name="supabaseKey" type="password" value="${esc(c.supabaseKey)}"></label></div>
+      <div class="field"><label>Huishoudcode<input name="household" maxlength="64" value="${esc(c.household)}"></label></div>
+      <div class="button-row"><button class="button button-primary">Opslaan</button><button type="button" class="button button-secondary" data-action="sync-now">Nu synchroniseren</button></div>
+    </form>
+    <p class="small-note">Zonder deze gegevens blijft alles alleen op dit apparaat. Gebruik nooit een service-role key. De tabel <code>${SYNC_TABLE}</code> heeft de kolommen <code>household_code</code> (text, primary key), <code>data</code> (jsonb) en <code>updated_at</code> (timestamptz). Deze instellingen worden niet in back-ups opgenomen.</p></section>`;
 }
 function renderPage(page = state.currentPage) {
   if (!PAGES[page]) page = 'today';
@@ -193,7 +307,8 @@ function renderPage(page = state.currentPage) {
   if (add) add.hidden = !SECTIONS[page];
   renderNav();
   if (!view) return;
-  view.innerHTML = page === 'today' ? renderToday() : page === 'budget' ? renderBudget() : page === 'car' ? renderCar() : page === 'settings' ? renderSettings() : renderSection(page);
+  if (page === 'weather') loadWeather(false);
+  view.innerHTML = page === 'today' ? renderToday() : page === 'budget' ? renderBudget() : page === 'car' ? renderCar() : page === 'settings' ? renderSettings() : page === 'weather' ? renderWeather() : renderSection(page);
 }
 function renderNav() {
   const nav = $$cached('#nav');
@@ -204,7 +319,11 @@ function renderNav() {
   for (const b of nav.children) b.classList.toggle('is-active', b.dataset.page === state.currentPage);
 }
 function applyTheme() {
-  document.documentElement.dataset.theme = state.theme;
+  const root = document.documentElement;
+  root.dataset.theme = state.theme;
+  root.dataset.appearance = state.appearance;
+  if (state.appearance === 'minimal' && /^#[0-9a-f]{6}$/i.test(state.minimalColor)) root.style.setProperty('--blue', state.minimalColor);
+  else root.style.removeProperty('--blue');
 }
 
 /* ---------- Acties ---------- */
@@ -303,6 +422,8 @@ function handleClick(e) {
     if (a === 'backup') exportData();
     else if (a === 'restore') $('#restoreInput')?.click();
     else if (a === 'export-prices') exportPrices();
+    else if (a === 'sync-now') syncNow(true);
+    else if (a === 'refresh-weather') loadWeather(true);
     return;
   }
   if (t.closest('#addBtn')) { openItemDialog(); return; }
@@ -322,7 +443,7 @@ function handleChange(e) {
   if (t.matches && t.matches('[data-toggle]')) {
     const item = listOf(t.dataset.toggle).find(i => i.id === t.dataset.id);
     if (item) { item.done = t.checked; saveState(); renderPage(state.currentPage); }
-  } else if (t.matches && t.matches('[data-setting="theme"]')) { state.theme = t.value; applyTheme(); saveState('Opgeslagen'); }
+  } else if (t.matches && t.matches('[data-setting]')) { state[t.dataset.setting] = t.value; applyTheme(); saveState('Opgeslagen'); }
   else if (t.id === 'restoreInput') { importData(t.files && t.files[0]); t.value = ''; }
   else if (t.id === 'priceFileInput') { importPrices(t.files && t.files[0]); t.value = ''; }
 }
@@ -333,6 +454,14 @@ function handleSubmit(e) {
   if (f.matches('[data-quick-task]')) { e.preventDefault(); addTask(data.text); }
   else if (f.matches('[data-budget-form]')) { e.preventDefault(); state.budget.monthly = Number(data.monthly) || 0; saveState('Budget opgeslagen'); renderPage('budget'); }
   else if (f.matches('[data-budget-item]')) { e.preventDefault(); state.budget.items.unshift({ id: uid(), name: data.name, amount: Number(data.amount) || 0 }); saveState('Toegevoegd'); renderPage('budget'); }
+  else if (f.matches('[data-weather-form]')) { e.preventDefault(); const city = String(data.weatherCity || '').trim(); if (city && saveConfig({ weatherCity: city })) { toast('Plaats opgeslagen'); loadWeather(true); } }
+  else if (f.matches('[data-sync-form]')) {
+    e.preventDefault();
+    if (saveConfig({ supabaseUrl: String(data.supabaseUrl || '').trim(), supabaseKey: String(data.supabaseKey || '').trim(), household: String(data.household || '').trim(), updatedAt: '' })) {
+      toast('Synchronisatie-instellingen opgeslagen');
+      if (syncEnabled()) syncNow(true); else setSyncState('Alleen dit apparaat');
+    }
+  }
   else if (f.matches('[data-car-form]')) { e.preventDefault(); state.car = { ...state.car, ...data }; saveState('Autogegevens opgeslagen'); }
   else if (f.id === 'itemForm') {
     e.preventDefault();
@@ -357,6 +486,9 @@ function init() {
   document.addEventListener('change', handleChange);
   document.addEventListener('submit', handleSubmit);
   renderPage(state.currentPage);
+  window.addEventListener('online', () => { captureBrainyQuote(); syncNow(); });
+  window.addEventListener('offline', () => setSyncState(syncEnabled() ? 'Offline' : 'Alleen dit apparaat'));
   captureBrainyQuote();
+  syncNow();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
