@@ -27,6 +27,8 @@ const CAR_FIELDS = [['model', 'Model'], ['plate', 'Kenteken'], ['year', 'Bouwjaa
 const uid = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const $ = (s, r = document) => r.querySelector(s);
+const refCache = {};
+const $$cached = id => { const el = refCache[id]; if (el && el.isConnected) return el; return (refCache[id] = document.querySelector(id)); };
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 function defaultState() {
@@ -182,21 +184,24 @@ function renderSettings() {
 function renderPage(page = state.currentPage) {
   if (!PAGES[page]) page = 'today';
   state.currentPage = page;
-  const view = $('#view');
-  const title = $('#pageTitle');
-  if (title) title.textContent = PAGES[page];
-  const eyebrow = $('#eyebrow');
+  const view = $$cached('#view');
+  const title = $$cached('#pageTitle');
+  if (title && title.textContent !== PAGES[page]) title.textContent = PAGES[page];
+  const eyebrow = $$cached('#eyebrow');
   if (eyebrow) { const h = new Date().getHours(); eyebrow.textContent = h < 12 ? 'Goedemorgen' : h < 18 ? 'Goedemiddag' : 'Goedenavond'; }
-  const add = $('#addBtn');
+  const add = $$cached('#addBtn');
   if (add) add.hidden = !SECTIONS[page];
   renderNav();
   if (!view) return;
   view.innerHTML = page === 'today' ? renderToday() : page === 'budget' ? renderBudget() : page === 'car' ? renderCar() : page === 'settings' ? renderSettings() : renderSection(page);
 }
 function renderNav() {
-  const nav = $('#nav');
+  const nav = $$cached('#nav');
   if (!nav) return;
-  nav.innerHTML = Object.entries(PAGES).map(([k, l]) => `<button class="nav-item ${k === state.currentPage ? 'is-active' : ''}" data-page="${k}">${esc(l)}</button>`).join('');
+  if (nav.childElementCount !== Object.keys(PAGES).length) {
+    nav.innerHTML = Object.entries(PAGES).map(([k, l]) => `<button class="nav-item" data-page="${k}">${esc(l)}</button>`).join('');
+  }
+  for (const b of nav.children) b.classList.toggle('is-active', b.dataset.page === state.currentPage);
 }
 function applyTheme() {
   document.documentElement.dataset.theme = state.theme;
@@ -229,12 +234,13 @@ function openItemDialog() {
 }
 function closeDialog(id) { const d = $(id); if (d && d.open) d.close(); }
 function openQuestion(p) {
-  const dlg = $('#questionDialog');
+  const dlg = $$cached('#questionDialog');
   if (!dlg || typeof dlg.showModal !== 'function') return;
-  $('#questionTitle') && ($('#questionTitle').textContent = `${p}, jouw antwoord`);
-  $('#questionText') && ($('#questionText').textContent = 'Wat zou vandaag voor jou een fijne dag maken?');
-  $('#questionPerson') && ($('#questionPerson').value = p);
-  $('#questionAnswer') && ($('#questionAnswer').value = '');
+  const qTitle = $$cached('#questionTitle'), qText = $$cached('#questionText'), qPerson = $$cached('#questionPerson'), qAnswer = $$cached('#questionAnswer');
+  if (qTitle) qTitle.textContent = `${p}, jouw antwoord`;
+  if (qText) qText.textContent = 'Wat zou vandaag voor jou een fijne dag maken?';
+  if (qPerson) qPerson.value = p;
+  if (qAnswer) qAnswer.value = '';
   dlg.showModal();
 }
 function download(name, text, type) {
@@ -267,9 +273,18 @@ function importPrices(file) {
       const text = String(r.result);
       let list;
       if (/\.json$/i.test(file.name)) { const d = JSON.parse(text); list = (Array.isArray(d) ? d : d.products || []).map(p => ({ product: p.product || p.name, store: p.store || '', price: Number(p.price) })); }
-      else list = text.split(/\r?\n/).map(l => l.split(/[;,\t]/).map(c => c.replace(/^"|"$/g, '').trim())).filter(c => c[0] && !isNaN(parseFloat(String(c[c.length - 1]).replace(',', '.')))).map(c => ({ product: c[0], store: c.length > 2 ? c[1] : '', price: parseFloat(c[c.length - 1].replace(',', '.')) }));
-      list = list.filter(p => p.product && isFinite(p.price));
-      state.priceReferences = list.map(p => ({ id: uid(), ...p }));
+      else {
+        list = [];
+        for (const line of text.split(/\r?\n/)) {
+          if (!line) continue;
+          const c = line.split(/[;,\t]/).map(x => x.replace(/^"|"$/g, '').trim());
+          const price = parseFloat(c[c.length - 1].replace(',', '.'));
+          if (c[0] && !isNaN(price)) list.push({ product: c[0], store: c.length > 2 ? c[1] : '', price });
+        }
+      }
+      state.priceReferences = [];
+      for (const p of list) if (p.product && isFinite(p.price)) state.priceReferences.push({ id: uid(), ...p });
+      list = state.priceReferences;
       saveState(`${list.length} prijzen geïmporteerd`);
     } catch { toast('Prijsbestand kon niet worden gelezen'); }
   };
