@@ -10,7 +10,10 @@
   <meta name="description" content="Het gezamenlijke thuisdashboard voor Kees en Daphne.">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icon.svg">
-  <link rel="stylesheet" href="styles.css?v=2">
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="base.css">
+  <link rel="stylesheet" href="layout.css">
+  <link rel="stylesheet" href="components.css">
   <title>Samen Thuis</title>
   <meta name="application-version" content="2.0">
 </head>
@@ -74,7 +77,7 @@
     </form>
   </dialog>
 
-  <div id="toast" class="toast" role="status"></div>
+  <div id="toast" class="toast" role="status" hidden style="position:fixed;right:20px;bottom:20px;z-index:100"></div>
 
   <div id="brainyQuoteSource" class="brainy-source" aria-hidden="true">
     <script src="https://www.brainyquote.com/link/quotebr.js"></script>
