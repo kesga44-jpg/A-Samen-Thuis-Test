@@ -14,10 +14,10 @@ function defaultState(){
     {id:uid(),title:'3× bewegen deze week',category:'Sport',target:3,progress:1,points:50,done:false,checkins:[]},
     {id:uid(),title:'30 minuten lezen',category:'Lezen',target:1,progress:0,points:20,done:false,checkins:[]},
     {id:uid(),title:'Samen iets leuks doen',category:'Samen',target:1,progress:0,points:30,done:false,checkins:[]}
-  ],programs:[],deals:[],meals:[],groceries:[],stock:[],home:[],budget:{monthly:0,spent:0,items:[]},dates:[],travel:[],car:{model:'',plate:'',year:'',mileage:'',apkDate:'',insuranceDate:'',maintenance:[],fuel:[],costs:[]},extras:[],history:[],dailyAnswers:{}};
+  ],programs:[],deals:[],meals:[],groceries:[],stock:[],home:[],budget:{monthly:0,spent:0,items:[]},dates:[],travel:[],car:{model:'',plate:'',year:'',mileage:'',apkDate:'',insuranceDate:'',maintenance:[],fuel:[],costs:[]},extras:[],history:[],dailyAnswers:{},priceReferences:[],priceReferenceSource:'',priceReferenceUpdatedAt:''};
 }
 function loadState(){try{const raw=localStorage.getItem(STORAGE_KEY);return raw?merge(defaultState(),JSON.parse(raw)):defaultState()}catch{return defaultState()}}
-function merge(base,saved){return {...base,...saved,tasks:Array.isArray(saved.tasks)?saved.tasks:base.tasks,challenges:Array.isArray(saved.challenges)?saved.challenges:base.challenges,programs:Array.isArray(saved.programs)?saved.programs:base.programs,meals:Array.isArray(saved.meals)?saved.meals:base.meals,groceries:Array.isArray(saved.groceries)?saved.groceries:base.groceries,agenda:Array.isArray(saved.agenda)?saved.agenda:base.agenda,deals:Array.isArray(saved.deals)?saved.deals:base.deals,stock:Array.isArray(saved.stock)?saved.stock:base.stock,home:Array.isArray(saved.home)?saved.home:base.home,dates:Array.isArray(saved.dates)?saved.dates:base.dates,travel:Array.isArray(saved.travel)?saved.travel:base.travel,extras:Array.isArray(saved.extras)?saved.extras:base.extras,budget:saved.budget||base.budget,car:saved.car||base.car,history:Array.isArray(saved.history)?saved.history:base.history,dailyAnswers:saved.dailyAnswers||base.dailyAnswers}}
+function merge(base,saved){return {...base,...saved,tasks:Array.isArray(saved.tasks)?saved.tasks:base.tasks,challenges:Array.isArray(saved.challenges)?saved.challenges:base.challenges,programs:Array.isArray(saved.programs)?saved.programs:base.programs,meals:Array.isArray(saved.meals)?saved.meals:base.meals,groceries:Array.isArray(saved.groceries)?saved.groceries:base.groceries,agenda:Array.isArray(saved.agenda)?saved.agenda:base.agenda,deals:Array.isArray(saved.deals)?saved.deals:base.deals,stock:Array.isArray(saved.stock)?saved.stock:base.stock,home:Array.isArray(saved.home)?saved.home:base.home,dates:Array.isArray(saved.dates)?saved.dates:base.dates,travel:Array.isArray(saved.travel)?saved.travel:base.travel,extras:Array.isArray(saved.extras)?saved.extras:base.extras,budget:saved.budget||base.budget,car:saved.car||base.car,history:Array.isArray(saved.history)?saved.history:base.history,dailyAnswers:saved.dailyAnswers||base.dailyAnswers,priceReferences:Array.isArray(saved.priceReferences)?saved.priceReferences:base.priceReferences,priceReferenceSource:saved.priceReferenceSource||base.priceReferenceSource,priceReferenceUpdatedAt:saved.priceReferenceUpdatedAt||base.priceReferenceUpdatedAt}}
 let state=loadState();
 const $=(s,r=document)=>r.querySelector(s); const $$=(s,r=document)=>[...r.querySelectorAll(s)];
 function saveState(message='Opgeslagen'){try{localStorage.setItem(STORAGE_KEY,JSON.stringify(state)); if(message) toast(message); return true}catch{toast('Opslag niet beschikbaar');return false}}
@@ -196,11 +196,13 @@ function renderMeals(){
 function renderGroceries(){
   const el=$('#grocery-list');
   el.innerHTML=state.groceries.map(x=>`<li class="task-row ${x.done?'is-done':''}" data-id="${x.id}"><input class="grocery-check" type="checkbox" ${x.done?'checked':''} title="Afvinken"><span class="person-badge">${personAvatar(x.person)}</span><div class="task-content"><span class="task-text">${esc(x.name)}</span><small>${esc(x.category)}</small></div><button class="icon-button delete-task" data-id="${x.id}" type="button">✕</button></li>`).join('')||'<li class="empty-row">Geen boodschappen.</li>';
+  renderPriceReferenceCard15('groceries');
 }
 
 function renderStock(){
   const el=$('#stock-list');
   el.innerHTML=state.stock.map(x=>`<li class="list-card ${Number(x.amount)<=Number(x.min||0)?'warning':''}"><div><strong>${esc(x.name)}</strong><small>${x.amount} ${x.unit} ${x.min?`(min: ${x.min})`:''}(min: 0)'}</small></div><button class="icon-button" data-delete-item="stock" data-id="${x.id}">✕</button></li>`).join('')||'<li class="empty-row">Geen voorraad.</li>';
+  renderPriceReferenceCard15('stock');
 }
 
 function renderHome(){
@@ -310,6 +312,7 @@ function bindForms(){
   
   $('#simple-form')&&($('#simple-form').onsubmit=e=>{e.preventDefault();const page=state.currentPage;const map={dates:'dates',travel:'travel',extras:'extras'};const key=map[page];if(!key)return;addGeneric(key,{title:$('#simple-title').value,note:$('#simple-note').value});e.target.reset()});
   
+  $$('.price-search-form').forEach(f=>f.onsubmit=async e=>{e.preventDefault();const input=f.querySelector('input');const q=input.value.trim();if(!q)return;toast('Prijzen zoeken…');try{const found=await searchPrijsfavoriet(q);if(!found.length){toast('Geen prijzen gevonden');return}addPriceReferences(found);toast(`${found.length} prijzen toegevoegd`)}catch{toast('Prijsfavoriet niet bereikbaar')}input.value=''});
   $('#question-form')&&($('#question-form').onsubmit=e=>{e.preventDefault();const person=$('#question-person').value;const answer=$('#question-answer').value.trim();if(!answer)return;state.dailyAnswers=state.dailyAnswers||{};state.dailyAnswers[todayKey()]=state.dailyAnswers[todayKey()]||{};state.dailyAnswers[todayKey()][person]=answer;renderToday();saveState(`${person} antwoord opgeslagen`);$('#question-dialog').close()});
 }
 
@@ -319,6 +322,7 @@ function handleClicks(e){
   if(e.target.classList.contains('delete-task')){deleteTask(e.target.dataset.id);return}
   if(e.target.hasAttribute('data-answer-person')){openQuestion(e.target.dataset.answerPerson);return}
   if(e.target.hasAttribute('data-check-challenge')){const c=state.challenges.find(x=>x.id===e.target.dataset.checkChallenge);if(c){c.checkins=c.checkins||[];if(!c.checkins.includes(todayKey()))c.checkins.push(todayKey());c.progress=Math.min(c.target,c.checkins.length);renderChallenges();saveState('Challenge geupdatet')}return}
+  if(e.target.hasAttribute('data-remove-price')){state.priceReferences=state.priceReferences.filter(x=>x.id!==e.target.dataset.removePrice);renderPriceCards15();saveState('Prijs verwijderd');return}
   if(e.target.closest('[data-close-dialog]')){$('#question-dialog').close();return}
   if(e.target.id==='menu-toggle'){$('.sidebar').classList.toggle('is-open');$('#mobile-scrim').classList.toggle('is-visible');return}
   if(e.target.id==='mobile-scrim'){closeMenu();return}
@@ -326,6 +330,7 @@ function handleClicks(e){
 
 function handleChanges(e){
   if(e.target.classList.contains('task-check')){toggleTask(e.target.closest('[data-id]').dataset.id);return}
+  if(e.target.classList.contains('price-file-input')){const f=e.target.files[0];if(f)importPriceFile15(f).catch(()=>toast('Bestand kon niet gelezen worden'));e.target.value='';return}
   if(e.target.classList.contains('grocery-check')){const g=state.groceries.find(x=>x.id===e.target.closest('[data-id]').dataset.id);if(g)g.done=e.target.checked;renderGroceries();saveState();return}
   if(e.target.id==='theme-select'){state.theme=e.target.value;applyTheme();saveState();return}
   if(e.target.id==='appearance-select'){state.appearance=e.target.value;applyTheme();saveState();return}
@@ -399,3 +404,136 @@ function init(){
 }
 
 document.addEventListener('DOMContentLoaded',init);
+
+
+/* Prijsfavoriet API integratie */
+const PRIJSFAVORIET_URL='https://www.prijsfavoriet.nl';
+const priceNorm15=(s='')=>String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim();
+const euro15=n=>n==null||isNaN(n)?'–':new Intl.NumberFormat('nl-NL',{style:'currency',currency:'EUR'}).format(Number(n));
+function normalizePriceResults15(data){
+  const list=Array.isArray(data)?data:(data&&(data.products||data.results||data.items))||[];
+  const out=[];
+  list.forEach(p=>{
+    const product=p.product||p.name||p.title;
+    const offers=Array.isArray(p.prices)?p.prices:Array.isArray(p.offers)?p.offers:Array.isArray(p.stores)?p.stores:[p];
+    offers.forEach(o=>{
+      const price=Number(String(o.price??o.prijs??o.floorPrice??'').replace(',','.'));
+      if(!product||!isFinite(price)||price<=0)return;
+      out.push({id:uid(),product:String(product),brand:p.brand||p.merk||'',store:o.store||o.supermarket||o.winkel||p.store||'',quantity:p.quantity||p.unit||o.quantity||'stuk',floorPrice:price,goodDealPrice:null,updatedAt:todayKey()});
+    });
+  });
+  return out;
+}
+async function searchPrijsfavoriet(query){
+  const res=await fetch(`${PRIJSFAVORIET_URL}/api/search?q=${encodeURIComponent(query)}`,{headers:{Accept:'application/json'}});
+  if(!res.ok)throw new Error('Prijsfavoriet fout');
+  return normalizePriceResults15(await res.json());
+}
+function addPriceReferences(items){
+  state.priceReferences=state.priceReferences||[];
+  items.forEach(n=>{const i=state.priceReferences.findIndex(x=>priceNorm15(x.product)===priceNorm15(n.product)&&(x.store||'')===(n.store||''));if(i>=0)state.priceReferences[i]={...n,id:state.priceReferences[i].id};else state.priceReferences.push(n)});
+  state.priceReferenceSource='Prijsfavoriet';
+  state.priceReferenceUpdatedAt=todayKey();
+  renderPriceCards15();
+  saveState();
+}
+function bestRefs15(title=''){
+  const q=priceNorm15(title);
+  if(!q)return [];
+  const exact=[],loose=[];
+  (state.priceReferences||[]).forEach(r=>{
+    const p=priceNorm15(r.product);
+    if(!p)return;
+    if(q===p||q.includes(p)||p.includes(q))exact.push(r);
+    else{const words=p.split(' ').filter(w=>w.length>3);if(words.length&&words.some(w=>q.includes(w)))loose.push(r)}
+  });
+  return (exact.length?exact:loose).sort((a,b)=>(a.floorPrice??999)-(b.floorPrice??999));
+}
+function priceBadge15(ref){
+  if(!ref)return '';
+  return `<span class="tag green">Bodem ${euro15(ref.floorPrice)} / ${esc(ref.quantity||'stuk')}</span>`+(ref.store?` <span class="tag">${esc(ref.store)}</span>`:'')+(ref.goodDealPrice!=null?` <span class="tag">Goede deal ≤ ${euro15(ref.goodDealPrice)}</span>`:'');
+}
+function renderPriceReferenceCard15(page=state.currentPage){
+  const el=$(`#price-reference-${page}`);
+  if(!el)return;
+  const items=page==='groceries'?state.groceries:state.stock;
+  const matched=items.map(item=>({item,refs:bestRefs15(item.name||item.title||'')})).filter(x=>x.refs.length);
+  el.innerHTML=`<div class="panel-heading"><div><p class="eyebrow">PRIJSFAVORIET</p><h3>Prijsreferentie</h3></div><span class="tag green">${(state.priceReferences||[]).length} prijzen</span></div>
+  <form class="price-search-form form-grid"><input placeholder="Zoek productprijs, bijv. melk" required><button class="button button-primary">Zoek prijzen</button></form>
+  <div class="form-grid"><label class="muted">Gierige Gerda lijst uploaden (PDF, TXT, CSV of JSON)<input type="file" class="price-file-input" accept=".pdf,.txt,.csv,.json,application/pdf,text/plain"></label></div>
+  <p class="muted">Bron: ${esc(state.priceReferenceSource||'Prijsfavoriet')} · bijgewerkt ${esc(state.priceReferenceUpdatedAt||'onbekend')}.</p>
+  ${matched.length?`<ul class="data-list">${matched.slice(0,12).map(x=>`<li class="list-card"><div><strong>${esc(x.item.name||x.item.title)}</strong><small>${priceBadge15(x.refs[0])}${x.refs.length>1?` · ${x.refs.length} passende referenties`:''}</small></div></li>`).join('')}</ul>`:'<p class="muted">Nog geen producten gekoppeld aan prijsreferenties.</p>'}
+  ${(state.priceReferences||[]).length?`<ul class="data-list">${state.priceReferences.slice(0,20).map(r=>`<li class="list-card"><div><strong>${esc(r.product)}</strong><small>${priceBadge15(r)}</small></div><button class="icon-button" type="button" data-remove-price="${r.id}">✕</button></li>`).join('')}</ul>`:''}`;
+  bindForms();
+}
+const PDFJS_URL='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
+const PDFJS_WORKER_URL='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+const PRICE_CATS15=['(Fris)drank','Chips','Diepvries','Drogisterij','Huishouden','Koffie en thee','Olie','Ontbijt en lunch','Pasta en rijst','Sauzen','Snoep','Vlees','Wereldkeuken','Zuivel'];
+const PRICE_QTY15=/(pakje\s+10\s+zakdoekjes|doosje\s+20\s+stuks|pak\s+2-3\s+personen|\d+\s+vel|\d+\s+stuks|\d+\s+gram|\d+\s+ml|(?:\d+\s+)?kilo|(?:\d+\s+)?liter|(?:\d+\s+)?stuk|wasbeurt|per\s+pad|pak|fles|blik|pot|zak)/i;
+async function extractPdfText15(file){
+  const pdfjs=await import(PDFJS_URL);
+  pdfjs.GlobalWorkerOptions.workerSrc=PDFJS_WORKER_URL;
+  const pdf=await pdfjs.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+  const out=[];
+  for(let n=1;n<=pdf.numPages;n++){
+    const content=await (await pdf.getPage(n)).getTextContent();
+    let line=[],prevY=null;
+    content.items.forEach(it=>{const v=String(it.str||'').trim();if(!v)return;const y=Math.round(it.transform?.[5]||0);if(prevY!==null&&Math.abs(y-prevY)>2&&line.length){out.push(line.join(' '));line=[]}line.push(v);prevY=y});
+    if(line.length)out.push(line.join(' '));
+  }
+  return out.join('\n');
+}
+function parsePrice15(v){const m=String(v||'').match(/(\d+[,.]\d+|\d+)/);return m?Number(m[1].replace(',','.')):null}
+function parseGerdaText15(text=''){
+  const months={januari:'01',februari:'02',maart:'03',april:'04',mei:'05',juni:'06',juli:'07',augustus:'08',september:'09',oktober:'10',november:'11',december:'12'};
+  const u=String(text).match(/Update datum:\s*(\d{1,2})\s+([A-Za-z\u00e9]+)\s+(20\d{2})/i);
+  const updatedAt=u?`${u[3]}-${months[priceNorm15(u[2])]||'01'}-${String(u[1]).padStart(2,'0')}`:todayKey();
+  const items=[];
+  String(text).replace(/\r/g,'').split(/\n+/).map(x=>x.trim()).filter(Boolean).forEach(line=>{
+    if(/^Categorie\s+Product/i.test(line)||/Copyright Gierige Gerda/i.test(line))return;
+    const category=PRICE_CATS15.find(c=>line.startsWith(c+' '));
+    const pm=line.match(/\u20ac\s*(\d+[,.]\d+)\s*(?:\u20ac\s*(\d+[,.]\d+)|[-x])?\s*$/i);
+    if(!category||!pm)return;
+    const prefix=line.slice(category.length,pm.index).trim();
+    const qm=prefix.match(PRICE_QTY15);
+    if(!qm)return;
+    const tokens=prefix.slice(0,qm.index).trim().split(/\s+/);
+    const brand=tokens.length>1?tokens.pop():'';
+    const product=tokens.join(' ');
+    if(!product)return;
+    items.push({id:uid(),category,product,brand:brand==='-'?'':brand,store:'',quantity:qm[1],floorPrice:parsePrice15(pm[1]),goodDealPrice:parsePrice15(pm[2]),source:'Gierige Gerda Media',updatedAt});
+  });
+  return {items,updatedAt};
+}
+function parseGerdaDelimited15(text=''){
+  const items=[];
+  String(text).replace(/\r/g,'').split(/\n+/).forEach(line=>{
+    const c=line.split(/[;\t,](?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.replace(/^"|"$/g,'').trim());
+    if(c.length<3||/^categorie|^product/i.test(c[0]))return;
+    const floor=parsePrice15(c[c.length-2]),good=parsePrice15(c[c.length-1]);
+    if(c.length>=5&&floor!=null)items.push({id:uid(),category:c[0],product:c[1],brand:c[2],store:'',quantity:c[3]||'stuk',floorPrice:floor,goodDealPrice:good,source:'Gierige Gerda Media',updatedAt:todayKey()});
+  });
+  return items;
+}
+async function importPriceFile15(file){
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+  toast(ext==='pdf'?'PDF wordt gelezen…':'Bestand wordt gelezen…');
+  let items=[],updatedAt=todayKey();
+  if(ext==='json'){
+    const json=JSON.parse(await file.text());
+    items=normalizePriceResults15(Array.isArray(json)?json:(json.priceReferences||json));
+  }else{
+    const text=ext==='pdf'?await extractPdfText15(file):await file.text();
+    const parsed=parseGerdaText15(text);
+    items=parsed.items;updatedAt=parsed.updatedAt;
+    if(!items.length)items=parseGerdaDelimited15(text);
+  }
+  if(!items.length){toast('Geen prijzen gevonden in bestand');return}
+  items.forEach(x=>{if(!x.updatedAt)x.updatedAt=updatedAt});
+  state.priceReferences=items;
+  state.priceReferenceSource='Gierige Gerda Media';
+  state.priceReferenceUpdatedAt=updatedAt;
+  renderPriceCards15();
+  saveState(`${items.length} prijzen geïmporteerd`);
+}
+function renderPriceCards15(){renderPriceReferenceCard15('groceries');renderPriceReferenceCard15('stock')}
