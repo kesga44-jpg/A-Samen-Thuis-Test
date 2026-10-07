@@ -27,7 +27,7 @@
 - Local-first blijven als uitgangspunt.
 - Gegevensschema en migraties documenteren.
 - Export/import en herstel testen vóór eventuele synchronisatie.
-- Geen Supabase-afhankelijkheid in deze testbranch.
+- Supabase-sync is optioneel (client-side, tabel `household_data`); geen SDK-afhankelijkheid.
 
 ## Laag 6 — Testen en releasen
 - Desktop, iPad en iPhone controleren.

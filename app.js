@@ -1,5 +1,14 @@
 const STORAGE_KEY = 'samenThuisV2';
 const QUOTE_KEY = 'samenThuisV2-quote';
+const WEATHER_KEY = 'samenThuisV2-weather';
+const SYNC_KEY = 'samenThuisV2-sync';
+const QUOTE_RSS = 'https://www.brainyquote.com/link/quotebr.rss';
+const Core = globalThis.SamenThuisCore;
+const DEVICE_KEYS = ['currentPage', 'theme', 'appearance', 'minimalColor', 'weather', 'showQuote', 'dashboard'];
+const DASH_WIDGETS = {
+  tasks: 'Open taken', quote: 'Quote van de dag', question: 'Vraag van de dag', weather: 'Weer', agenda: 'Agenda', groceries: 'Boodschappen', challenges: 'Challenges'
+};
+const DASH_DEFAULT_VISIBLE = ['tasks', 'quote', 'question'];
 const PEOPLE = ['Kees', 'Daphne', 'Samen'];
 const PAGES = {
   today: 'Vandaag', weather: 'Weer', tasks: 'Taken', agenda: 'Agenda', challenges: 'Challenges', programs: "Programma's",
@@ -33,7 +42,8 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 function defaultState() {
   return {
-    version: 2, currentPage: 'today', theme: 'light', appearance: 'normal', minimalColor: '#315f86',
+    version: 2, currentPage: 'today', theme: 'light', appearance: 'normal', minimalColor: '#315f86', showQuote: true, dashboard: [],
+    weather: { place: 'Amsterdam', lat: 52.37, lon: 4.9 }, meta: { updatedAt: '' },
     tasks: [
       { id: uid(), text: 'Wasmachine aanzetten', person: 'Kees', category: 'Huishouden', due: todayKey(), done: false },
       { id: uid(), text: 'Boodschappenlijst controleren', person: 'Samen', category: 'Boodschappen', due: todayKey(), done: false }
@@ -57,6 +67,18 @@ function merge(base, saved) {
   });
   if (!Array.isArray(out.budget.items)) out.budget.items = [];
   if (!PAGES[out.currentPage]) out.currentPage = 'today';
+  out.dashboard = normalizeDashboard(out.dashboard, out.showQuote);
+  return out;
+}
+function normalizeDashboard(list, showQuote = true) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(list) ? list : []).forEach(e => {
+    if (e && DASH_WIDGETS[e.id] && !seen.has(e.id)) { seen.add(e.id); out.push({ id: e.id, visible: e.visible !== false }); }
+  });
+  Object.keys(DASH_WIDGETS).forEach(id => {
+    if (!seen.has(id)) out.push({ id, visible: id === 'quote' ? showQuote !== false : DASH_DEFAULT_VISIBLE.includes(id) });
+  });
   return out;
 }
 function loadState() {
@@ -75,167 +97,263 @@ function toast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, 2400);
 }
-function saveState(message = '') {
+function saveState(message = '', { touch = true, sync = true } = {}) {
   try {
+    if (touch) state.meta.updatedAt = new Date().toISOString();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     const s = $('#saveState'); if (s) s.textContent = 'Lokaal bewaard';
     if (message) toast(message);
-    scheduleSync();
+    if (sync) scheduleSync();
     return true;
   } catch { toast('Opslag niet beschikbaar'); return false; }
 }
 
 /* ---------- Quote ---------- */
-const QUOTE_URL = 'https://www.brainyquote.com/link/quotebr.rss';
-const QUOTE_FALLBACK = '<p class="quote-note muted">De quote van vandaag is nu niet beschikbaar (offline of bron onbereikbaar). Probeer het later opnieuw.</p>';
 function readCachedQuote() {
-  try { const c = JSON.parse(localStorage.getItem(QUOTE_KEY) || 'null'); return c && c.date === todayKey() && c.html ? c : null; }
+  try { const c = JSON.parse(localStorage.getItem(QUOTE_KEY) || 'null'); return c && c.markup ? c : null; }
   catch { return null; }
 }
-function quoteMarkup(q) {
-  return `<blockquote class="daily-quote">${esc(q.text)}</blockquote>${q.author ? `<p class="muted">— ${esc(q.author)}</p>` : ''}`;
+function quoteMarkup(text, author = '') {
+  return `<blockquote>${esc(text)}</blockquote>${author ? `<p class="muted">— ${esc(author)}</p>` : ''}`;
 }
 function quoteBodyMarkup() {
   const c = readCachedQuote();
-  return c ? c.html : QUOTE_FALLBACK;
+  return c
+    ? `<div class="quote-content">${c.markup}</div>`
+    : '<p class="quote-note muted">De quote van vandaag is nu niet beschikbaar. Hij wordt opgehaald zodra er verbinding is.</p>';
 }
 function renderQuote() {
-  return `<section class="panel quote-panel"><div class="panel-heading"><div><p class="eyebrow">Dagelijkse inspiratie</p><h2>Quote van de dag</h2></div><span class="panel-icon">✦</span></div><div id="quoteBody">${quoteBodyMarkup()}</div></section>`;
+  if (!state.showQuote) return '';
+  return `<section class="panel quote-panel"><div class="panel-heading"><div><p class="eyebrow">Dagelijkse inspiratie</p><h2>Quote van de dag</h2></div><span class="panel-icon">✦</span></div><div id="quoteBody">${quoteBodyMarkup()}</div><p class="small-note"><a href="${QUOTE_RSS}" target="_blank" rel="noopener">Bron: BrainyQuote RSS</a></p></section>`;
+}
+function parseQuoteFromDom() {
+  const src = $('#brainyQuoteSource');
+  if (!src) return null;
+  const clone = src.cloneNode(true);
+  $$('script,a', clone).forEach(n => n.remove());
+  const text = clone.textContent.replace(/\s+/g, ' ').trim();
+  return text.length > 12 ? { text, author: '' } : null;
 }
 async function fetchQuoteFromRss() {
   const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = ctrl && setTimeout(() => ctrl.abort(), 6000);
   try {
-    const res = await fetch(QUOTE_URL, { signal: ctrl && ctrl.signal });
-    if (!res.ok) return null;
+    const res = await fetch(QUOTE_RSS, { cache: 'no-store', signal: ctrl && ctrl.signal });
+    if (!res.ok) throw new Error(`BrainyQuote gaf ${res.status}`);
     const xml = new DOMParser().parseFromString(await res.text(), 'application/xml');
     const item = xml.querySelector('item');
-    if (!item) return null;
+    if (!item) throw new Error('Geen quote in feed');
     const title = (item.querySelector('title')?.textContent || '').trim();
     const desc = new DOMParser().parseFromString(item.querySelector('description')?.textContent || '', 'text/html').body.textContent.trim();
     const generic = /^(today'?s )?quote/i.test(title);
     const text = generic ? desc : title;
     return text ? { text, author: generic || desc === title ? '' : desc } : null;
-  } catch { return null; }
-  finally { if (timer) clearTimeout(timer); }
+  } finally { if (timer) clearTimeout(timer); }
 }
-let quoteLoading = false;
+let quoteBusy = false;
 async function captureBrainyQuote() {
-  if (readCachedQuote()) return true;
-  if (quoteLoading || navigator.onLine === false) return false;
-  quoteLoading = true;
+  const cached = readCachedQuote();
+  if ((cached && cached.date === todayKey()) || quoteBusy) return !!cached;
+  quoteBusy = true;
   try {
-    const q = await fetchQuoteFromRss();
-    if (!q) return false;
-    const html = quoteMarkup(q);
-    try { localStorage.setItem(QUOTE_KEY, JSON.stringify({ date: todayKey(), html })); } catch { /* cache niet beschikbaar */ }
+    let q = null;
+    try { q = await fetchQuoteFromRss(); } catch (err) { console.warn('Quote ophalen via RSS mislukt', err); }
+    if (!q) q = parseQuoteFromDom();
+    if (!q || !q.text) return !!cached;
+    try { localStorage.setItem(QUOTE_KEY, JSON.stringify({ date: todayKey(), markup: quoteMarkup(q.text, q.author) })); }
+    catch (err) { console.warn('Quote cache niet beschikbaar', err); }
     const box = $('#quoteBody');
-    if (box) box.innerHTML = html;
+    if (box) box.innerHTML = quoteBodyMarkup();
     return true;
-  } finally { quoteLoading = false; }
+  } finally { quoteBusy = false; }
 }
 
 /* ---------- Weer ---------- */
-const WEATHER_KEY = 'samenThuisV2-weather';
-const WEATHER_CODES = { 0: 'Helder', 1: 'Overwegend helder', 2: 'Half bewolkt', 3: 'Bewolkt', 45: 'Mist', 48: 'Rijpmist', 51: 'Lichte motregen', 53: 'Motregen', 55: 'Zware motregen', 61: 'Lichte regen', 63: 'Regen', 65: 'Zware regen', 71: 'Lichte sneeuw', 73: 'Sneeuw', 75: 'Zware sneeuw', 80: 'Regenbuien', 81: 'Regenbuien', 82: 'Zware buien', 95: 'Onweer', 96: 'Onweer met hagel', 99: 'Zwaar onweer' };
-function readWeather() {
-  try { const w = JSON.parse(localStorage.getItem(WEATHER_KEY) || 'null'); return w && w.days ? w : null; }
-  catch { return null; }
+const WEATHER_CODES = { 0: 'Helder', 1: 'Overwegend helder', 2: 'Half bewolkt', 3: 'Bewolkt', 45: 'Mist', 48: 'Rijpmist', 51: 'Lichte motregen', 53: 'Motregen', 55: 'Zware motregen', 61: 'Lichte regen', 63: 'Regen', 65: 'Zware regen', 71: 'Lichte sneeuw', 73: 'Sneeuw', 75: 'Zware sneeuw', 80: 'Lichte buien', 81: 'Buien', 82: 'Zware buien', 95: 'Onweer', 96: 'Onweer met hagel', 99: 'Zwaar onweer met hagel' };
+const weatherLabel = c => WEATHER_CODES[c] || 'Onbekend';
+function weatherUrl() {
+  const w = state.weather;
+  return `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(w.lat)}&longitude=${encodeURIComponent(w.lon)}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum&hourly=temperature_2m,precipitation&timezone=auto&forecast_days=7`;
 }
-function weatherBodyMarkup() {
-  const w = readWeather();
-  if (!w) return '<p class="quote-note muted">Het weer is nu niet beschikbaar (offline of bron onbereikbaar).</p>';
-  const cfg = config();
-  const day = d => `<article class="challenge-card"><div class="challenge-main"><p class="eyebrow">${esc(new Date(d.date).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'short' }))}</p><h3>${esc(WEATHER_CODES[d.code] || 'Onbekend')}</h3><p class="muted">${Math.round(d.min)}° / ${Math.round(d.max)}° · regen ${Math.round(d.rain || 0)}%</p></div></article>`;
-  return `<p class="muted">${esc(cfg.weatherCity)} · bijgewerkt ${esc(new Date(w.fetched).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }))}</p><div class="challenge-grid">${w.days.map(day).join('')}</div>`;
+function weatherChart({ labels, temps, rain, title, tempLabel, rainLabel, tempLow }) {
+  const n = labels.length;
+  if (n < 2) return '';
+  const W = 640, H = 300, L = 40, R = 40, T = 24, B = 40, iw = W - L - R, ih = H - T - B;
+  const all = temps.concat(tempLow || []).filter(Number.isFinite);
+  if (!all.length) return '';
+  const lo = Math.floor(Math.min(...all) - 1), hi = Math.ceil(Math.max(...all) + 1);
+  const rMax = Math.max(1, ...rain.map(v => Number(v) || 0));
+  const x = i => L + (iw * (i + .5)) / n;
+  const yT = v => T + ih - ((v - lo) / (hi - lo || 1)) * ih;
+  const yR = v => T + ih - ((Number(v) || 0) / rMax) * ih;
+  const bw = Math.max(2, Math.min(28, (iw / n) * .6));
+  const line = (arr, cls) => `<polyline class="${cls}" points="${arr.map((v, i) => `${x(i).toFixed(1)},${yT(v).toFixed(1)}`).join(' ')}"/>`;
+  const step = Math.max(1, Math.ceil(n / 8));
+  const bars = rain.map((v, i) => `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${yR(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(T + ih - yR(v)).toFixed(1)}" rx="2" fill="var(--blue)" opacity=".28"/>`).join('');
+  const grid = [0, .5, 1].map(f => { const y = T + ih * f; return `<line class="weather-grid-line" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text class="weather-axis" x="${L - 6}" y="${y + 4}" text-anchor="end">${Math.round(hi - (hi - lo) * f)}°</text><text class="weather-axis" x="${W - R + 6}" y="${y + 4}">${+(rMax * (1 - f)).toFixed(1)}</text>`; }).join('');
+  const xl = labels.map((l, i) => i % step === 0 ? `<text class="weather-axis" x="${x(i).toFixed(1)}" y="${H - 18}" text-anchor="middle">${esc(l)}</text>` : '').join('');
+  const dots = temps.length <= 8 ? temps.map((v, i) => `<circle class="weather-temp-dot" r="4" cx="${x(i).toFixed(1)}" cy="${yT(v).toFixed(1)}"/>`).join('') : '';
+  return `<section class="panel weather-chart-panel"><div class="panel-heading"><div><p class="eyebrow">Temperatuur en neerslag</p><h3>${esc(title)}</h3></div></div>
+    <div class="weather-svg-chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${title}: ${tempLabel} en ${rainLabel}`)}">${grid}${bars}${tempLow ? line(tempLow, 'weather-min-line') : ''}${line(temps, 'weather-temp-line')}${dots}${xl}
+    <text class="weather-legend" x="${L}" y="${H - 2}">— ${esc(tempLabel)} (°C)</text><text class="weather-legend" x="${W - R}" y="${H - 2}" text-anchor="end">▮ ${esc(rainLabel)}</text></svg></div></section>`;
 }
-function renderWeather() {
-  return `<section class="panel" id="page-weather"><div class="panel-heading"><div><p class="eyebrow">Weeroverzicht</p><h2>Weer</h2></div><button class="button button-secondary button-small" data-action="refresh-weather">Vernieuwen</button></div><div id="weatherBody">${weatherBodyMarkup()}</div></section>`;
+function weatherCharts(d) {
+  const day = d.daily, h = d.hourly;
+  let out = weatherChart({
+    title: 'Komende 7 dagen', tempLabel: 'max / min temperatuur', rainLabel: 'neerslag (mm)',
+    labels: day.time.map(t => new Date(`${t}T12:00:00`).toLocaleDateString('nl-NL', { weekday: 'short' })),
+    temps: day.temperature_2m_max, tempLow: day.temperature_2m_min, rain: (day.precipitation_sum || day.time.map(() => 0))
+  });
+  if (h && Array.isArray(h.time) && h.time.length) {
+    const now = Date.now();
+    let start = h.time.findIndex(t => new Date(t).getTime() >= now - 3600e3);
+    if (start < 0) start = 0;
+    const idx = h.time.slice(start, start + 24).map((_, i) => start + i);
+    out += weatherChart({
+      title: 'Komende 24 uur (per uur)', tempLabel: 'temperatuur', rainLabel: 'neerslag (mm)',
+      labels: idx.map(i => `${h.time[i].slice(11, 13)}u`), temps: idx.map(i => h.temperature_2m[i]), rain: idx.map(i => h.precipitation[i])
+    });
+  }
+  return out;
 }
-async function fetchWeather() {
-  const cfg = config();
+function weatherMarkup(d) {
+  const c = d.current, day = d.daily;
+  const days = day.time.map((t, i) => `<li class="list-card"><div><strong>${esc(new Date(`${t}T12:00:00`).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'short' }))}</strong><small>${esc(weatherLabel(day.weather_code[i]))} · ${Math.round(day.temperature_2m_min[i])}° – ${Math.round(day.temperature_2m_max[i])}° · neerslagkans ${day.precipitation_probability_max[i] ?? 0}%</small></div></li>`).join('');
+  return `<p class="weather-now"><strong>${Math.round(c.temperature_2m)}°C</strong> ${esc(weatherLabel(c.weather_code))}</p>
+    <p class="muted">Voelt als ${Math.round(c.apparent_temperature)}° · wind ${Math.round(c.wind_speed_10m)} km/u · luchtvochtigheid ${Math.round(c.relative_humidity_2m)}%</p>
+    ${weatherCharts(d)}
+    <ul class="data-list">${days}</ul>`;
+}
+async function loadWeather() {
+  const box = $('#weatherBody');
+  if (!box) return;
+  let cache = null;
+  try { cache = JSON.parse(localStorage.getItem(WEATHER_KEY) || 'null'); } catch { cache = null; }
+  const key = `${state.weather.lat},${state.weather.lon}`;
+  if (cache && cache.key === key) box.innerHTML = weatherMarkup(cache.data);
   const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = ctrl && setTimeout(() => ctrl.abort(), 8000);
   try {
-    const geo = await (await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=1&language=nl&name=${encodeURIComponent(cfg.weatherCity)}`, { signal: ctrl && ctrl.signal })).json();
-    const loc = geo.results && geo.results[0];
-    if (!loc) return false;
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.latitude}&longitude=${loc.longitude}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=5`;
-    const res = await fetch(url, { signal: ctrl && ctrl.signal });
-    if (!res.ok) return false;
-    const d = (await res.json()).daily;
-    if (!d || !d.time) return false;
-    const days = d.time.map((date, i) => ({ date, code: d.weathercode[i], max: d.temperature_2m_max[i], min: d.temperature_2m_min[i], rain: d.precipitation_probability_max[i] }));
-    try { localStorage.setItem(WEATHER_KEY, JSON.stringify({ city: cfg.weatherCity, fetched: Date.now(), days })); } catch { /* cache niet beschikbaar */ }
-    return true;
-  } catch { return false; }
-  finally { if (timer) clearTimeout(timer); }
+    const res = await fetch(weatherUrl(), { signal: ctrl && ctrl.signal });
+    if (!res.ok) throw new Error(`Open-Meteo gaf ${res.status}`);
+    const data = await res.json();
+    if (!data.current || !data.daily) throw new Error('Onverwacht antwoord');
+    try { localStorage.setItem(WEATHER_KEY, JSON.stringify({ key, data })); } catch { /* cache niet beschikbaar */ }
+    const target = $('#weatherBody');
+    if (target) target.innerHTML = weatherMarkup(data);
+  } catch (err) {
+    console.warn('Weer laden mislukt', err);
+    const target = $('#weatherBody');
+    if (target && !(cache && cache.key === key)) target.innerHTML = '<p class="quote-note muted">Het weer kan nu niet worden geladen. Controleer je verbinding; er wordt geen voorspelling verzonnen.</p>';
+  } finally { if (timer) clearTimeout(timer); }
 }
-async function loadWeather(force) {
-  const w = readWeather();
-  if (!force && w && w.city === config().weatherCity && Date.now() - w.fetched < 3600000) return;
-  if (navigator.onLine === false) { if (force) toast('Offline: weer niet vernieuwd'); return; }
-  const ok = await fetchWeather();
-  const box = $('#weatherBody');
-  if (box) box.innerHTML = weatherBodyMarkup();
-  if (force) toast(ok ? 'Weer vernieuwd' : 'Weer kon niet worden geladen');
+function renderWeather() {
+  const w = state.weather;
+  return `<section class="panel weather-panel"><div class="panel-heading"><div><p class="eyebrow">${esc(w.place)}</p><h2>Weer</h2></div><span class="panel-icon">☀</span></div>
+    <div id="weatherBody"><p class="muted">Weer laden…</p></div>
+    <form class="inline-form" data-weather-form><input name="place" value="${esc(w.place)}" placeholder="Plaats" aria-label="Plaatsnaam" required><input name="lat" type="number" step="any" min="-90" max="90" value="${esc(w.lat)}" aria-label="Breedtegraad" required><input name="lon" type="number" step="any" min="-180" max="180" value="${esc(w.lon)}" aria-label="Lengtegraad" required><button class="button button-secondary">Locatie opslaan</button><button type="button" class="button button-secondary" data-weather-locate>Mijn locatie</button></form></section>`;
 }
 
-/* ---------- Instellingen & synchronisatie (Supabase, optioneel) ---------- */
-const CONFIG_KEY = 'samenThuisV2-config';
-const SYNC_TABLE = 'household_state';
-let cfgCache;
-function config() {
-  if (cfgCache) return cfgCache;
-  let c = {};
-  try { c = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}') || {}; } catch { c = {}; }
-  return (cfgCache = { supabaseUrl: '', supabaseKey: '', household: '', weatherCity: 'Amsterdam', updatedAt: '', ...c });
-}
-function saveConfig(patch) {
-  cfgCache = { ...config(), ...patch };
-  try { localStorage.setItem(CONFIG_KEY, JSON.stringify(cfgCache)); return true; } catch { toast('Opslag niet beschikbaar'); return false; }
-}
-function syncEnabled() { const c = config(); return !!(c.supabaseUrl && c.supabaseKey && c.household); }
-function setSyncState(text) { const el = $('#syncState'); if (el) el.textContent = text; }
-function syncRequest(path, options = {}) {
-  const c = config();
-  const base = c.supabaseUrl.replace(/\/+$/, '');
-  if (!/^https:\/\//i.test(base)) throw new Error('URL moet met https:// beginnen');
-  return fetch(`${base}/rest/v1/${SYNC_TABLE}${path}`, { ...options, headers: { apikey: c.supabaseKey, Authorization: 'Bearer ' + c.supabaseKey, 'Content-Type': 'application/json', ...(options.headers || {}) } });
-}
-async function pushState() {
-  const updatedAt = new Date().toISOString();
-  const res = await syncRequest('?on_conflict=household_code', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ household_code: config().household, data: state, updated_at: updatedAt }) });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  saveConfig({ updatedAt });
-}
-async function syncNow(manual) {
-  if (!syncEnabled()) { setSyncState('Alleen dit apparaat'); if (manual) toast('Vul eerst de synchronisatie-instellingen in'); return; }
-  if (navigator.onLine === false) { setSyncState('Offline'); return; }
-  setSyncState('Synchroniseren…');
+/* ---------- Synchronisatie (Supabase, optioneel) ---------- */
+const MIN_CODE = 12;
+function loadSyncConfig() {
   try {
-    const res = await syncRequest(`?household_code=eq.${encodeURIComponent(config().household)}&select=data,updated_at`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const row = (await res.json())[0];
-    if (row && row.data && row.updated_at > (config().updatedAt || '')) {
-      state = merge(defaultState(), row.data);
-      saveConfig({ updatedAt: row.updated_at });
-      applyTheme();
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* lokaal niet beschikbaar */ }
-      renderPage(state.currentPage);
-    } else await pushState();
-    setSyncState('Gesynchroniseerd');
-    if (manual) toast('Gesynchroniseerd');
-  } catch (err) { setSyncState('Sync mislukt'); if (manual) toast(`Synchronisatie mislukt: ${err.message}`); }
+    const c = JSON.parse(localStorage.getItem(SYNC_KEY) || 'null') || {};
+    return { projectUrl: String(c.projectUrl || ''), anonKey: String(c.anonKey || ''), householdCode: String(c.householdCode || ''), lastSyncedAt: String(c.lastSyncedAt || '') };
+  } catch { return { projectUrl: '', anonKey: '', householdCode: '', lastSyncedAt: '' }; }
 }
-let syncTimer;
+let syncConfig = loadSyncConfig();
+let syncing = false, syncError = '', syncTimer;
+const validProjectUrl = u => { try { return new URL(u).protocol === 'https:'; } catch { return false; } };
+const syncConfigured = () => validProjectUrl(syncConfig.projectUrl) && !!syncConfig.anonKey && syncConfig.householdCode.length >= MIN_CODE;
+function saveSyncConfig() { try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncConfig)); } catch { toast('Opslag niet beschikbaar'); } }
+function updateSyncBadge() {
+  const b = $('#syncState');
+  if (!b) return;
+  b.textContent = !syncConfigured() ? 'Alleen dit apparaat' : !navigator.onLine ? 'Offline · later synchroniseren' : syncing ? 'Synchroniseren…' : syncError ? 'Sync controleren' : syncConfig.lastSyncedAt ? 'Apparaten gelijk' : 'Sync gereed';
+  b.classList.toggle('connected', syncConfigured() && !syncing && !syncError);
+}
+const bytesToB64 = bytes => btoa(String.fromCharCode(...bytes));
+const b64ToBytes = v => Uint8Array.from(atob(v), c => c.charCodeAt(0));
+async function sha256(v) {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function deriveKey(code, salt) {
+  const m = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 250000 }, m, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function encryptData(value, code) {
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await deriveKey(code, salt), new TextEncoder().encode(JSON.stringify(value)));
+  return { version: 1, salt: bytesToB64(salt), iv: bytesToB64(iv), ciphertext: bytesToB64(new Uint8Array(enc)) };
+}
+async function decryptData(p, code) {
+  const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(p.iv) }, await deriveKey(code, b64ToBytes(p.salt)), b64ToBytes(p.ciphertext));
+  return JSON.parse(new TextDecoder().decode(dec));
+}
+function supabaseHeaders() {
+  const h = { apikey: syncConfig.anonKey, 'Content-Type': 'application/json' };
+  if (!syncConfig.anonKey.startsWith('sb_publishable_')) h.Authorization = 'Bearer ' + syncConfig.anonKey;
+  return h;
+}
+const syncPayload = st => { const o = { ...st }; DEVICE_KEYS.forEach(k => delete o[k]); return o; };
+async function syncNow({ manual = false } = {}) {
+  if (!syncConfigured() || syncing || !navigator.onLine) {
+    if (manual) toast(!navigator.onLine ? 'Geen internetverbinding' : 'Vul eerst de synchronisatie-instellingen in');
+    return;
+  }
+  syncing = true; syncError = ''; updateSyncBadge();
+  try {
+    if (!(window.crypto && crypto.subtle)) throw new Error('Versleuteling vereist HTTPS');
+    const id = await sha256(syncConfig.householdCode);
+    const base = syncConfig.projectUrl.replace(/\/+$/, '');
+    const res = await fetch(`${base}/rest/v1/household_data?id=eq.${id}&select=payload,updated_at`, { headers: supabaseHeaders() });
+    if (!res.ok) throw new Error(`Supabase gaf ${res.status}`);
+    const rows = await res.json();
+    const remote = rows[0]?.payload ? await decryptData(rows[0].payload, syncConfig.householdCode) : null;
+    const localUpdated = state.meta.updatedAt, remoteUpdated = remote?.meta?.updatedAt || rows[0]?.updated_at || '';
+    const first = !syncConfig.lastSyncedAt;
+    const remoteNewer = remote && Date.parse(remoteUpdated) > (Date.parse(localUpdated) || 0);
+    const local = syncPayload(state);
+    if (remote && Core.hasConcurrentChanges(localUpdated, remoteUpdated, syncConfig.lastSyncedAt, local, syncPayload(merge(defaultState(), remote)))) toast('Op beide apparaten is gewijzigd; de nieuwste versie wordt gebruikt');
+    if (remote && (first || remoteNewer)) {
+      const device = Object.fromEntries(DEVICE_KEYS.map(k => [k, state[k]]));
+      state = { ...merge(defaultState(), remote), ...device };
+      saveState('', { touch: false, sync: false });
+      renderPage(state.currentPage);
+    } else if (!remote || !Core.sameData(local, syncPayload(merge(defaultState(), remote)))) {
+      const up = await fetch(`${base}/rest/v1/household_data?on_conflict=id`, {
+        method: 'POST', headers: { ...supabaseHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ id, payload: await encryptData(local, syncConfig.householdCode), updated_at: localUpdated || new Date().toISOString() })
+      });
+      if (!up.ok) throw new Error(`Opslaan gaf ${up.status}`);
+    }
+    syncConfig.lastSyncedAt = new Date().toISOString();
+    saveSyncConfig();
+    if (manual) toast('Apparaten zijn bijgewerkt');
+  } catch (err) {
+    console.error('Synchronisatie mislukt', err);
+    syncError = err.message || 'Synchronisatie mislukt';
+    if (manual) toast('Synchronisatie lukt nog niet. Controleer de instellingen.');
+  } finally { syncing = false; updateSyncBadge(); }
+}
 function scheduleSync() {
-  if (!syncEnabled()) return;
+  if (!syncConfigured()) return;
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(async () => {
-    if (navigator.onLine === false) return setSyncState('Offline');
-    try { await pushState(); setSyncState('Gesynchroniseerd'); } catch { setSyncState('Sync mislukt'); }
-  }, 1500);
+  syncTimer = setTimeout(() => syncNow(), 1200);
+}
+function handleSyncForm(data) {
+  const next = { projectUrl: String(data.projectUrl || '').trim(), anonKey: String(data.anonKey || '').trim(), householdCode: String(data.householdCode || '').trim() };
+  if (next.projectUrl && !validProjectUrl(next.projectUrl)) return toast('Gebruik een https-projecturl');
+  if (next.householdCode && next.householdCode.length < MIN_CODE) return toast(`Kies een huishoudcode van minimaal ${MIN_CODE} tekens`);
+  const changed = ['projectUrl', 'anonKey', 'householdCode'].some(k => next[k] !== syncConfig[k]);
+  syncConfig = { ...syncConfig, ...next, lastSyncedAt: changed ? '' : syncConfig.lastSyncedAt };
+  syncError = '';
+  saveSyncConfig();
+  toast(syncConfigured() ? 'Synchronisatie opgeslagen' : 'Opgeslagen; vul alle velden in om te synchroniseren');
+  renderPage('settings'); updateSyncBadge();
+  if (syncConfigured()) syncNow({ manual: true });
 }
 
 /* ---------- Pagina's ---------- */
@@ -247,19 +365,33 @@ function itemMarkup(page, item) {
 function listMarkup(page, items = listOf(page)) {
   return `<ul class="data-list task-list">${items.map(i => itemMarkup(page, i)).join('') || `<li class="empty-row">${esc(SECTIONS[page].empty)}</li>`}</ul>`;
 }
+function weatherSummary() {
+  let cache = null;
+  try { cache = JSON.parse(localStorage.getItem(WEATHER_KEY) || 'null'); } catch { cache = null; }
+  const c = cache && cache.key === `${state.weather.lat},${state.weather.lon}` && cache.data && cache.data.current;
+  return c
+    ? `<p class="weather-now"><strong>${Math.round(c.temperature_2m)}°C</strong> ${esc(weatherLabel(c.weather_code))}</p><p class="small-note">Zie de pagina Weer voor grafieken.</p>`
+    : '<p class="quote-note muted">Open eenmaal de pagina Weer om het weer hier te tonen.</p>';
+}
 function renderToday() {
   const open = state.tasks.filter(t => !t.done);
   const a = state.dailyAnswers[todayKey()] || {};
   const date = new Date().toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
   const q = 'Wat zou vandaag voor jou een fijne dag maken?';
   const who = ['Kees', 'Daphne'].map(p => a[p] ? `<article><strong>${p}</strong><p>${esc(a[p])}</p></article>` : `<button class="button button-secondary button-small" data-answer="${p}">${p} beantwoordt</button>`).join(' ');
-  return `<div class="page-grid">
-    <section class="panel tasks-panel"><div class="panel-heading"><div><p class="eyebrow">${esc(date)}</p><h2>Open taken (${open.length})</h2></div></div>
+  const widgets = {
+    tasks: () => `<section class="panel tasks-panel"><div class="panel-heading"><div><p class="eyebrow">${esc(date)}</p><h2>Open taken (${open.length})</h2></div></div>
       <form class="inline-form" data-quick-task><input name="text" placeholder="Nieuwe taak…" required maxlength="120"><button class="button button-primary">Toevoegen</button></form>
-      ${listMarkup('tasks', open.slice(0, 8))}</section>
-    ${renderQuote()}
-    <section class="panel question-panel"><div class="panel-heading"><div><p class="eyebrow">Even samen stilstaan</p><h2>Vraag van de dag</h2></div><span class="panel-icon">♡</span></div><p>${esc(q)}</p><div class="button-row">${who}</div></section>
-  </div>`;
+      ${listMarkup('tasks', open.slice(0, 8))}</section>`,
+    quote: renderQuote,
+    question: () => `<section class="panel question-panel"><div class="panel-heading"><div><p class="eyebrow">Even samen stilstaan</p><h2>Vraag van de dag</h2></div><span class="panel-icon">♡</span></div><p>${esc(q)}</p><div class="button-row">${who}</div></section>`,
+    weather: () => `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">${esc(state.weather.place)}</p><h2>Weer</h2></div><span class="panel-icon">☀</span></div>${weatherSummary()}</section>`,
+    agenda: () => `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Eerstvolgende afspraken</p><h2>Agenda</h2></div></div>${listMarkup('agenda', state.agenda.filter(i => !i.date || i.date >= todayKey()).slice(0, 5))}</section>`,
+    groceries: () => `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Nog te halen</p><h2>Boodschappen</h2></div></div>${listMarkup('groceries', state.groceries.filter(i => !i.done).slice(0, 8))}</section>`,
+    challenges: () => `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Samen doen</p><h2>Challenges</h2></div></div>${listMarkup('challenges', state.challenges.filter(i => !i.done).slice(0, 5))}</section>`
+  };
+  const html = normalizeDashboard(state.dashboard, state.showQuote).filter(w => w.visible).map(w => widgets[w.id]()).join('');
+  return `<div class="page-grid">${html || '<section class="panel"><p class="muted">Je dashboard is leeg. Kies onderdelen bij Instellingen → Dashboard samenstellen.</p></section>'}</div>`;
 }
 function renderSection(page) {
   const items = listOf(page);
@@ -278,22 +410,24 @@ function renderCar() {
   return `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Auto</p><h2>Autogegevens</h2></div></div><form class="stack-form form-grid" data-car-form>${CAR_FIELDS.map(([k, l, t]) => `<div class="field"><label>${l}<input name="${k}" type="${t || 'text'}" value="${esc(state.car[k] || '')}"></label></div>`).join('')}<button class="button button-primary">Opslaan</button></form></section>`;
 }
 function renderSettings() {
-  const c = config();
-  const sel = (key, opts) => opts.map(([v, l]) => `<option value="${v}" ${state[key] === v ? 'selected' : ''}>${l}</option>`).join('');
-  return `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Weergave</p><h2>Instellingen</h2></div></div>
-    <div class="setting-row"><label>Thema <select data-setting="theme">${sel('theme', [['light', 'Licht'], ['dark', 'Donker']])}</select></label></div>
-    <div class="setting-row"><label>Vormgeving <select data-setting="appearance">${sel('appearance', [['normal', 'Normaal'], ['minimal', 'Minimaal']])}</select></label></div>
-    <div class="setting-row"><label>Accentkleur (minimaal) <input type="color" data-setting="minimalColor" value="${esc(state.minimalColor)}"></label></div>
-    <form class="stack-form" data-weather-form><div class="setting-row"><label>Plaats voor het weer <input name="weatherCity" value="${esc(c.weatherCity)}" required maxlength="80"></label><button class="button button-secondary">Opslaan</button></div></form>
+  const configured = syncConfigured();
+  const opt = (v, l, cur) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`;
+  return `<div class="page-grid"><section class="panel"><div class="panel-heading"><div><p class="eyebrow">Weergave</p><h2>Instellingen</h2></div></div>
+    <div class="setting-row"><label>Thema <select data-setting="theme">${opt('light', 'Licht', state.theme)}${opt('dark', 'Donker', state.theme)}</select></label></div>
+    <div class="setting-row"><label>Uiterlijk <select data-setting="appearance">${opt('normal', 'Normaal', state.appearance)}${opt('minimal', 'Minimalistisch', state.appearance)}</select></label></div>
+    <div class="setting-row"><label>Accentkleur <input type="color" data-setting="minimalColor" value="${esc(state.minimalColor)}"></label></div>
+    <h3>Dashboard samenstellen</h3>
+    ${normalizeDashboard(state.dashboard, state.showQuote).map((w, i, a) => `<div class="setting-row"><label><input type="checkbox" data-dash-toggle="${w.id}" ${w.visible ? 'checked' : ''}> ${esc(DASH_WIDGETS[w.id])}</label><span><button type="button" class="icon-button" data-dash-move="${w.id}" data-dir="-1" aria-label="Omhoog" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="icon-button" data-dash-move="${w.id}" data-dir="1" aria-label="Omlaag" ${i === a.length - 1 ? 'disabled' : ''}>↓</button></span></div>`).join('')}
+    <div class="setting-row"><button type="button" class="button button-secondary button-small" data-dash-reset>Standaard dashboard herstellen</button></div>
     <p class="small-note">Gegevens worden lokaal in je browser bewaard. Gebruik de knoppen links voor een back-up.</p></section>
-    <section class="panel" id="syncPanel"><div class="panel-heading"><div><p class="eyebrow">Optioneel</p><h2>Synchronisatie (Supabase)</h2></div></div>
-    <form class="stack-form" data-sync-form autocomplete="off">
-      <div class="field"><label>Project-URL<input name="supabaseUrl" type="url" placeholder="https://xyz.supabase.co" value="${esc(c.supabaseUrl)}"></label></div>
-      <div class="field"><label>Publishable / anon key<input name="supabaseKey" type="password" value="${esc(c.supabaseKey)}"></label></div>
-      <div class="field"><label>Huishoudcode<input name="household" maxlength="64" value="${esc(c.household)}"></label></div>
-      <div class="button-row"><button class="button button-primary">Opslaan</button><button type="button" class="button button-secondary" data-action="sync-now">Nu synchroniseren</button></div>
-    </form>
-    <p class="small-note">Zonder deze gegevens blijft alles alleen op dit apparaat. Gebruik nooit een service-role key. De tabel <code>${SYNC_TABLE}</code> heeft de kolommen <code>household_code</code> (text, primary key), <code>data</code> (jsonb) en <code>updated_at</code> (timestamptz). Deze instellingen worden niet in back-ups opgenomen.</p></section>`;
+    <section class="panel"><div class="panel-heading"><div><p class="eyebrow">Apparaten</p><h2>Synchronisatie (optioneel)</h2></div><span class="panel-icon">${configured ? '✓' : '○'}</span></div>
+    <p class="small-note">Standaard blijft alles alleen op dit apparaat. Vul je eigen Supabase-project en een gedeelde geheime huishoudcode in om te synchroniseren. Gegevens worden versleuteld met de huishoudcode voordat ze worden verstuurd.</p>
+    <form id="syncForm" class="stack-form form-grid">
+      <div class="field"><label>Project-URL<input name="projectUrl" type="url" value="${esc(syncConfig.projectUrl)}" placeholder="https://jouwproject.supabase.co" autocomplete="off"></label></div>
+      <div class="field"><label>Publishable / anon key<input name="anonKey" type="password" value="${esc(syncConfig.anonKey)}" autocomplete="off"></label></div>
+      <div class="field"><label>Huishoudcode (minimaal ${MIN_CODE} tekens)<input name="householdCode" type="password" value="${esc(syncConfig.householdCode)}" minlength="${MIN_CODE}" autocomplete="off"></label></div>
+      <div class="button-row"><button class="button button-primary">Bewaren</button>${configured ? '<button type="button" class="button button-secondary" data-sync-now>Nu synchroniseren</button><button type="button" class="button button-secondary" data-sync-clear>Synchronisatie uitzetten</button>' : ''}</div>
+    </form></section></div>`;
 }
 function renderPage(page = state.currentPage) {
   if (!PAGES[page]) page = 'today';
@@ -307,8 +441,8 @@ function renderPage(page = state.currentPage) {
   if (add) add.hidden = !SECTIONS[page];
   renderNav();
   if (!view) return;
-  if (page === 'weather') loadWeather(false);
-  view.innerHTML = page === 'today' ? renderToday() : page === 'budget' ? renderBudget() : page === 'car' ? renderCar() : page === 'settings' ? renderSettings() : page === 'weather' ? renderWeather() : renderSection(page);
+  view.innerHTML = page === 'today' ? renderToday() : page === 'weather' ? renderWeather() : page === 'budget' ? renderBudget() : page === 'car' ? renderCar() : page === 'settings' ? renderSettings() : renderSection(page);
+  if (page === 'weather') loadWeather();
 }
 function renderNav() {
   const nav = $$cached('#nav');
@@ -319,11 +453,9 @@ function renderNav() {
   for (const b of nav.children) b.classList.toggle('is-active', b.dataset.page === state.currentPage);
 }
 function applyTheme() {
-  const root = document.documentElement;
-  root.dataset.theme = state.theme;
-  root.dataset.appearance = state.appearance;
-  if (state.appearance === 'minimal' && /^#[0-9a-f]{6}$/i.test(state.minimalColor)) root.style.setProperty('--blue', state.minimalColor);
-  else root.style.removeProperty('--blue');
+  document.documentElement.dataset.theme = state.theme;
+  document.documentElement.dataset.appearance = state.appearance;
+  document.documentElement.style.setProperty('--accent-minimal', state.minimalColor);
 }
 
 /* ---------- Acties ---------- */
@@ -422,8 +554,20 @@ function handleClick(e) {
     if (a === 'backup') exportData();
     else if (a === 'restore') $('#restoreInput')?.click();
     else if (a === 'export-prices') exportPrices();
-    else if (a === 'sync-now') syncNow(true);
-    else if (a === 'refresh-weather') loadWeather(true);
+    return;
+  }
+  const dm = t.closest('[data-dash-move]');
+  if (dm) {
+    const list = normalizeDashboard(state.dashboard, state.showQuote), i = list.findIndex(w => w.id === dm.dataset.dashMove), j = i + Number(dm.dataset.dir);
+    if (i >= 0 && j >= 0 && j < list.length) { [list[i], list[j]] = [list[j], list[i]]; state.dashboard = list; saveState('Opgeslagen'); renderPage('settings'); }
+    return;
+  }
+  if (t.closest('[data-dash-reset]')) { state.dashboard = normalizeDashboard([], true); state.showQuote = true; saveState('Dashboard hersteld'); renderPage('settings'); return; }
+  if (t.closest('[data-sync-now]')) { syncNow({ manual: true }); return; }
+  if (t.closest('[data-sync-clear]')) { syncConfig = { projectUrl: '', anonKey: '', householdCode: '', lastSyncedAt: '' }; saveSyncConfig(); toast('Synchronisatie uitgezet'); renderPage('settings'); updateSyncBadge(); return; }
+  if (t.closest('[data-weather-locate]')) {
+    if (!navigator.geolocation) { toast('Locatie niet beschikbaar'); return; }
+    navigator.geolocation.getCurrentPosition(p => { state.weather = { place: 'Mijn locatie', lat: +p.coords.latitude.toFixed(3), lon: +p.coords.longitude.toFixed(3) }; saveState('Locatie opgeslagen'); renderPage('weather'); }, () => toast('Locatie niet toegestaan'));
     return;
   }
   if (t.closest('#addBtn')) { openItemDialog(); return; }
@@ -443,7 +587,14 @@ function handleChange(e) {
   if (t.matches && t.matches('[data-toggle]')) {
     const item = listOf(t.dataset.toggle).find(i => i.id === t.dataset.id);
     if (item) { item.done = t.checked; saveState(); renderPage(state.currentPage); }
-  } else if (t.matches && t.matches('[data-setting]')) { state[t.dataset.setting] = t.value; applyTheme(); saveState('Opgeslagen'); }
+  } else if (t.matches && t.matches('[data-setting="theme"]')) { state.theme = t.value; applyTheme(); saveState('Opgeslagen'); }
+  else if (t.matches && t.matches('[data-setting="appearance"]')) { state.appearance = t.value; applyTheme(); saveState('Opgeslagen'); }
+  else if (t.matches && t.matches('[data-setting="minimalColor"]')) { state.minimalColor = t.value; applyTheme(); saveState('Opgeslagen'); }
+  else if (t.matches && t.matches('[data-dash-toggle]')) {
+    state.dashboard = normalizeDashboard(state.dashboard, state.showQuote).map(w => w.id === t.dataset.dashToggle ? { ...w, visible: t.checked } : w);
+    if (t.dataset.dashToggle === 'quote') state.showQuote = t.checked;
+    saveState('Opgeslagen');
+  }
   else if (t.id === 'restoreInput') { importData(t.files && t.files[0]); t.value = ''; }
   else if (t.id === 'priceFileInput') { importPrices(t.files && t.files[0]); t.value = ''; }
 }
@@ -454,13 +605,13 @@ function handleSubmit(e) {
   if (f.matches('[data-quick-task]')) { e.preventDefault(); addTask(data.text); }
   else if (f.matches('[data-budget-form]')) { e.preventDefault(); state.budget.monthly = Number(data.monthly) || 0; saveState('Budget opgeslagen'); renderPage('budget'); }
   else if (f.matches('[data-budget-item]')) { e.preventDefault(); state.budget.items.unshift({ id: uid(), name: data.name, amount: Number(data.amount) || 0 }); saveState('Toegevoegd'); renderPage('budget'); }
-  else if (f.matches('[data-weather-form]')) { e.preventDefault(); const city = String(data.weatherCity || '').trim(); if (city && saveConfig({ weatherCity: city })) { toast('Plaats opgeslagen'); loadWeather(true); } }
-  else if (f.matches('[data-sync-form]')) {
+  else if (f.id === 'syncForm') { e.preventDefault(); handleSyncForm(data); }
+  else if (f.matches('[data-weather-form]')) {
     e.preventDefault();
-    if (saveConfig({ supabaseUrl: String(data.supabaseUrl || '').trim(), supabaseKey: String(data.supabaseKey || '').trim(), household: String(data.household || '').trim(), updatedAt: '' })) {
-      toast('Synchronisatie-instellingen opgeslagen');
-      if (syncEnabled()) syncNow(true); else setSyncState('Alleen dit apparaat');
-    }
+    const lat = Number(data.lat), lon = Number(data.lon);
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) { toast('Ongeldige coördinaten'); return; }
+    state.weather = { place: String(data.place || '').trim() || 'Mijn locatie', lat, lon };
+    saveState('Locatie opgeslagen'); renderPage('weather');
   }
   else if (f.matches('[data-car-form]')) { e.preventDefault(); state.car = { ...state.car, ...data }; saveState('Autogegevens opgeslagen'); }
   else if (f.id === 'itemForm') {
@@ -486,9 +637,10 @@ function init() {
   document.addEventListener('change', handleChange);
   document.addEventListener('submit', handleSubmit);
   renderPage(state.currentPage);
-  window.addEventListener('online', () => { captureBrainyQuote(); syncNow(); });
-  window.addEventListener('offline', () => setSyncState(syncEnabled() ? 'Offline' : 'Alleen dit apparaat'));
+  window.addEventListener('online', () => { captureBrainyQuote(); updateSyncBadge(); scheduleSync(); });
+  window.addEventListener('offline', updateSyncBadge);
+  updateSyncBadge();
   captureBrainyQuote();
-  syncNow();
+  scheduleSync();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
