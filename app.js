@@ -330,6 +330,7 @@ function handleClicks(e){
 
 function handleChanges(e){
   if(e.target.classList.contains('task-check')){toggleTask(e.target.closest('[data-id]').dataset.id);return}
+  if(e.target.classList.contains('price-file-input')){const f=e.target.files[0];if(f)importPriceFile15(f).catch(()=>toast('Bestand kon niet gelezen worden'));e.target.value='';return}
   if(e.target.classList.contains('grocery-check')){const g=state.groceries.find(x=>x.id===e.target.closest('[data-id]').dataset.id);if(g)g.done=e.target.checked;renderGroceries();saveState();return}
   if(e.target.id==='theme-select'){state.theme=e.target.value;applyTheme();saveState();return}
   if(e.target.id==='appearance-select'){state.appearance=e.target.value;applyTheme();saveState();return}
@@ -459,9 +460,80 @@ function renderPriceReferenceCard15(page=state.currentPage){
   const matched=items.map(item=>({item,refs:bestRefs15(item.name||item.title||'')})).filter(x=>x.refs.length);
   el.innerHTML=`<div class="panel-heading"><div><p class="eyebrow">PRIJSFAVORIET</p><h3>Prijsreferentie</h3></div><span class="tag green">${(state.priceReferences||[]).length} prijzen</span></div>
   <form class="price-search-form form-grid"><input placeholder="Zoek productprijs, bijv. melk" required><button class="button button-primary">Zoek prijzen</button></form>
+  <div class="form-grid"><label class="muted">Gierige Gerda lijst uploaden (PDF, TXT, CSV of JSON)<input type="file" class="price-file-input" accept=".pdf,.txt,.csv,.json,application/pdf,text/plain"></label></div>
   <p class="muted">Bron: ${esc(state.priceReferenceSource||'Prijsfavoriet')} · bijgewerkt ${esc(state.priceReferenceUpdatedAt||'onbekend')}.</p>
   ${matched.length?`<ul class="data-list">${matched.slice(0,12).map(x=>`<li class="list-card"><div><strong>${esc(x.item.name||x.item.title)}</strong><small>${priceBadge15(x.refs[0])}${x.refs.length>1?` · ${x.refs.length} passende referenties`:''}</small></div></li>`).join('')}</ul>`:'<p class="muted">Nog geen producten gekoppeld aan prijsreferenties.</p>'}
   ${(state.priceReferences||[]).length?`<ul class="data-list">${state.priceReferences.slice(0,20).map(r=>`<li class="list-card"><div><strong>${esc(r.product)}</strong><small>${priceBadge15(r)}</small></div><button class="icon-button" type="button" data-remove-price="${r.id}">✕</button></li>`).join('')}</ul>`:''}`;
   bindForms();
+}
+const PDFJS_URL='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
+const PDFJS_WORKER_URL='https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+const PRICE_CATS15=['(Fris)drank','Chips','Diepvries','Drogisterij','Huishouden','Koffie en thee','Olie','Ontbijt en lunch','Pasta en rijst','Sauzen','Snoep','Vlees','Wereldkeuken','Zuivel'];
+const PRICE_QTY15=/(pakje\s+10\s+zakdoekjes|doosje\s+20\s+stuks|pak\s+2-3\s+personen|\d+\s+vel|\d+\s+stuks|\d+\s+gram|\d+\s+ml|(?:\d+\s+)?kilo|(?:\d+\s+)?liter|(?:\d+\s+)?stuk|wasbeurt|per\s+pad|pak|fles|blik|pot|zak)/i;
+async function extractPdfText15(file){
+  const pdfjs=await import(PDFJS_URL);
+  pdfjs.GlobalWorkerOptions.workerSrc=PDFJS_WORKER_URL;
+  const pdf=await pdfjs.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+  const out=[];
+  for(let n=1;n<=pdf.numPages;n++){
+    const content=await (await pdf.getPage(n)).getTextContent();
+    let line=[],prevY=null;
+    content.items.forEach(it=>{const v=String(it.str||'').trim();if(!v)return;const y=Math.round(it.transform?.[5]||0);if(prevY!==null&&Math.abs(y-prevY)>2&&line.length){out.push(line.join(' '));line=[]}line.push(v);prevY=y});
+    if(line.length)out.push(line.join(' '));
+  }
+  return out.join('\n');
+}
+function parsePrice15(v){const m=String(v||'').match(/(\d+[,.]\d+|\d+)/);return m?Number(m[1].replace(',','.')):null}
+function parseGerdaText15(text=''){
+  const months={januari:'01',februari:'02',maart:'03',april:'04',mei:'05',juni:'06',juli:'07',augustus:'08',september:'09',oktober:'10',november:'11',december:'12'};
+  const u=String(text).match(/Update datum:\s*(\d{1,2})\s+([A-Za-z\u00e9]+)\s+(20\d{2})/i);
+  const updatedAt=u?`${u[3]}-${months[priceNorm15(u[2])]||'01'}-${String(u[1]).padStart(2,'0')}`:todayKey();
+  const items=[];
+  String(text).replace(/\r/g,'').split(/\n+/).map(x=>x.trim()).filter(Boolean).forEach(line=>{
+    if(/^Categorie\s+Product/i.test(line)||/Copyright Gierige Gerda/i.test(line))return;
+    const category=PRICE_CATS15.find(c=>line.startsWith(c+' '));
+    const pm=line.match(/\u20ac\s*(\d+[,.]\d+)\s*(?:\u20ac\s*(\d+[,.]\d+)|[-x])?\s*$/i);
+    if(!category||!pm)return;
+    const prefix=line.slice(category.length,pm.index).trim();
+    const qm=prefix.match(PRICE_QTY15);
+    if(!qm)return;
+    const tokens=prefix.slice(0,qm.index).trim().split(/\s+/);
+    const brand=tokens.length>1?tokens.pop():'';
+    const product=tokens.join(' ');
+    if(!product)return;
+    items.push({id:uid(),category,product,brand:brand==='-'?'':brand,store:'',quantity:qm[1],floorPrice:parsePrice15(pm[1]),goodDealPrice:parsePrice15(pm[2]),source:'Gierige Gerda Media',updatedAt});
+  });
+  return {items,updatedAt};
+}
+function parseGerdaDelimited15(text=''){
+  const items=[];
+  String(text).replace(/\r/g,'').split(/\n+/).forEach(line=>{
+    const c=line.split(/[;\t,](?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.replace(/^"|"$/g,'').trim());
+    if(c.length<3||/^categorie|^product/i.test(c[0]))return;
+    const floor=parsePrice15(c[c.length-2]),good=parsePrice15(c[c.length-1]);
+    if(c.length>=5&&floor!=null)items.push({id:uid(),category:c[0],product:c[1],brand:c[2],store:'',quantity:c[3]||'stuk',floorPrice:floor,goodDealPrice:good,source:'Gierige Gerda Media',updatedAt:todayKey()});
+  });
+  return items;
+}
+async function importPriceFile15(file){
+  const ext=(file.name.split('.').pop()||'').toLowerCase();
+  toast(ext==='pdf'?'PDF wordt gelezen…':'Bestand wordt gelezen…');
+  let items=[],updatedAt=todayKey();
+  if(ext==='json'){
+    const json=JSON.parse(await file.text());
+    items=normalizePriceResults15(Array.isArray(json)?json:(json.priceReferences||json));
+  }else{
+    const text=ext==='pdf'?await extractPdfText15(file):await file.text();
+    const parsed=parseGerdaText15(text);
+    items=parsed.items;updatedAt=parsed.updatedAt;
+    if(!items.length)items=parseGerdaDelimited15(text);
+  }
+  if(!items.length){toast('Geen prijzen gevonden in bestand');return}
+  items.forEach(x=>{if(!x.updatedAt)x.updatedAt=updatedAt});
+  state.priceReferences=items;
+  state.priceReferenceSource='Gierige Gerda Media';
+  state.priceReferenceUpdatedAt=updatedAt;
+  renderPriceCards15();
+  saveState(`${items.length} prijzen geïmporteerd`);
 }
 function renderPriceCards15(){renderPriceReferenceCard15('groceries');renderPriceReferenceCard15('stock')}
