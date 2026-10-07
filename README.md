@@ -1,6 +1,6 @@
 # Samen Thuis — standalone test v2
 
-Zelfstandige, frameworkloze local-first testversie van Samen Thuis. Local-first; synchronisatie via Supabase is optioneel en staat standaard uit (Instellingen: project-URL, publishable/anon key en huishoudcode, lokaal bewaard en versleuteld verstuurd). Weer heeft een eigen pagina (Open-Meteo) en de quote komt van de BrainyQuote RSS met lokale cache. Geen externe JavaScript-bibliotheken.
+Zelfstandige, frameworkloze local-first testversie van Samen Thuis. Local-first; synchronisatie via Supabase is optioneel en staat standaard uit (Instellingen: project-URL, publishable/anon key en huishoudcode, lokaal bewaard en versleuteld verstuurd). Weer heeft een eigen pagina (Open-Meteo) en de quote komt van de BrainyQuote RSS met lokale cache. Geen externe JavaScript-bibliotheken. Het dashboard (Vandaag) is volledig samen te stellen via Instellingen (aan/uit en volgorde, lokaal bewaard). De Weer-pagina toont een 7-daagse en een uurgrafiek met temperatuur en neerslag.
 
 ## Wat is nu uitgevoerd
 
