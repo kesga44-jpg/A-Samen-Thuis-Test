@@ -494,3 +494,33 @@ html[data-appearance="minimal"] .shortcut-card { box-shadow: none; }
 .weather-current-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:16px 0}.weather-current-card{display:flex;align-items:center;gap:12px;padding:14px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper);box-shadow:var(--shadow-xs)}.weather-current-icon{font-size:1.45rem}.weather-current-card small{display:block;color:var(--muted)}.weather-current-card strong{display:block;margin-top:2px;font-size:1rem}.weather-chart-panel{overflow:hidden}.weather-svg-chart{height:340px;margin-top:10px}.weather-svg-chart svg{width:100%;height:100%;display:block;overflow:visible}.weather-grid-line{stroke:var(--line);stroke-width:1}.weather-axis,.weather-legend{fill:var(--muted);font:12px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.weather-temp-line{fill:none;stroke:var(--blue);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.weather-min-line{fill:none;stroke:var(--muted);stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.weather-rain-line{fill:none;stroke:var(--blue);stroke-width:2;stroke-dasharray:5 6;opacity:.8}.weather-temp-dot{fill:var(--paper);stroke:var(--blue);stroke-width:3}.weather-min-dot{fill:var(--paper);stroke:var(--muted);stroke-width:3}.weather-range-line{stroke:var(--line);stroke-width:3}.weather-value{fill:var(--ink);font:600 13px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.weather-pollen-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.weather-pollen-card{padding:16px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper)}.weather-card-top{display:flex;align-items:center;gap:10px}.weather-mini-icon{font-size:1.35rem}.weather-card-top strong{display:block}.weather-status-pill{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:var(--blue-soft);color:var(--blue);font-size:.72rem;font-weight:700;margin-top:5px}.weather-status-pill.low,.weather-status-pill.good{background:var(--green-soft);color:var(--green)}.weather-status-pill.moderate,.weather-status-pill.fair{background:var(--orange-soft);color:#a85d31}.weather-status-pill.high,.weather-status-pill.poor,.weather-status-pill.very-poor,.weather-status-pill.very-high,.weather-status-pill.extreme{background:var(--red-soft);color:var(--red)}.weather-pollen-number{font-size:1.7rem;font-weight:700;margin:16px 0 8px}.weather-pollen-number small{font-size:.72rem;color:var(--muted);font-weight:500}.weather-meter,.air-bar{height:7px;border-radius:999px;background:var(--bg);overflow:hidden}.weather-meter span,.air-bar span{display:block;height:100%;border-radius:inherit;background:var(--blue)}.weather-air-layout{display:grid;grid-template-columns:1.1fr 1.4fr;gap:22px;align-items:center}.aqi-main{display:flex;align-items:center;gap:20px}.aqi-score{width:120px;height:120px;border-radius:50%;display:flex;flex-direction:column;justify-content:center;align-items:center;background:var(--green-soft);color:var(--green);border:10px solid var(--green-soft)}.aqi-score strong{font-size:2rem;line-height:1}.aqi-score span{font-size:.72rem;font-weight:700;margin-top:4px}.aqi-score.fair,.aqi-score.moderate{background:var(--orange-soft);border-color:var(--orange-soft);color:#a85d31}.aqi-score.poor,.aqi-score.very-poor,.aqi-score.extreme{background:var(--red-soft);border-color:var(--red-soft);color:var(--red)}.aqi-main h4{margin:10px 0 4px}.aqi-main p{margin:0;color:var(--muted);font-size:.82rem}.air-pollutants{display:grid;grid-template-columns:1fr 1fr;gap:12px}.air-pollutants article{padding:16px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper)}.air-pollutants span{display:block;color:var(--muted);font-size:.78rem}.air-pollutants strong{font-size:1.7rem}.air-pollutants small{color:var(--muted);margin-left:4px}.air-bar{margin-top:10px}.aqi-scale{grid-column:1/-1;display:flex;justify-content:space-between;color:var(--muted);font-size:.7rem;padding-top:4px}.weather-clothing-grid{display:grid;grid-template-columns:1.35fr 1fr;gap:14px}.clothing-hero,.clothing-health{display:flex;align-items:center;gap:18px;padding:16px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper)}.clothing-hero img{width:180px;height:145px;object-fit:contain;border-radius:14px}.clothing-hero h4,.clothing-health h4{margin:8px 0 4px;font-size:1.1rem}.clothing-hero p,.clothing-health p{margin:0 0 6px;color:var(--muted)}.health-advice-icon{font-size:2rem;align-self:flex-start}.muted{color:var(--muted)}
 @media(max-width:1050px){.weather-current-grid{grid-template-columns:repeat(3,1fr)}.weather-pollen-grid{grid-template-columns:repeat(2,1fr)}.weather-air-layout,.weather-clothing-grid{grid-template-columns:1fr}}
 @media(max-width:760px){.weather-current-grid{grid-template-columns:repeat(2,1fr)}.weather-current-card{padding:12px}.weather-svg-chart{height:260px}.weather-pollen-grid{grid-template-columns:1fr}.aqi-main{align-items:flex-start}.aqi-score{width:100px;height:100px}.air-pollutants{grid-template-columns:1fr}.clothing-hero{align-items:flex-start}.clothing-hero img{width:125px;height:105px}.aqi-scale{font-size:.64rem}}
+
+/* MOBILE ENHANCEMENTS */
+@media (max-width: 760px) {
+  .button, .button-small, .icon-button, .sidebar button, .sidebar a,
+  .quick-add-options button, .button-row .button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .form-grid input, .form-grid select, .form-grid textarea,
+  .stack-form input, .stack-form select, .setting-row select,
+  input[type="text"], input[type="number"], input[type="date"], input[type="time"], input[type="email"], textarea, select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  input[type="checkbox"], input[type="radio"] { width: 22px; height: 22px; }
+  .form-grid, .form-row, .stack-form { gap: 12px; }
+  .setting-row { flex-wrap: wrap; padding: 12px 0; }
+  .list-card { padding: 12px; }
+  .quick-add-dialog {
+    width: calc(100vw - 20px);
+    max-height: calc(100dvh - 20px);
+    margin: auto;
+    padding: 18px 16px calc(18px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .toast-region { left: 12px; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); }
+  .budget-summary { flex-wrap: wrap; }
+  .page-header { flex-wrap: wrap; gap: 8px; align-items: start; }
+}
