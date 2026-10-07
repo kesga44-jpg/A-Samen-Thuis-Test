@@ -11,7 +11,7 @@
 - [ ] Taken blijven na verversen bewaard.
 - [ ] Focus bewaren en wijzigen werkt.
 - [ ] Snel toevoegen opent en de opties werken.
-- [ ] Geen Supabase-URL, credentials of externe JS-dependencies aanwezig.
+- [ ] Geen vooraf ingevulde Supabase-URL/credentials of externe JS-dependencies aanwezig; sync staat standaard uit.
 - [ ] Geen fouten in de browserconsole.
 - [ ] Aanbieding toevoegen, laten matchen met boodschappen en toevoegen aan boodschappenlijst.
 - [ ] Challenge per dag afvinken; streakoverzicht en punten controleren.

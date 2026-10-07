@@ -1,8 +1,13 @@
 const STORAGE_KEY = 'samenThuisV2';
 const QUOTE_KEY = 'samenThuisV2-quote';
+const WEATHER_KEY = 'samenThuisV2-weather';
+const SYNC_KEY = 'samenThuisV2-sync';
+const QUOTE_RSS = 'https://www.brainyquote.com/link/quotebr.rss';
+const Core = globalThis.SamenThuisCore;
+const DEVICE_KEYS = ['currentPage', 'theme', 'appearance', 'minimalColor', 'weather', 'showQuote'];
 const PEOPLE = ['Kees', 'Daphne', 'Samen'];
 const PAGES = {
-  today: 'Vandaag', tasks: 'Taken', agenda: 'Agenda', challenges: 'Challenges', programs: "Programma's",
+  today: 'Vandaag', weather: 'Weer', tasks: 'Taken', agenda: 'Agenda', challenges: 'Challenges', programs: "Programma's",
   mealplan: 'Weekmenu', groceries: 'Boodschappen', deals: 'Acties & aanbiedingen', stock: 'Voorraad',
   home: 'Woning', car: 'Auto', budget: 'Budget', dates: 'Date ideeën', travel: 'Reizen', extras: 'Extra', settings: 'Instellingen'
 };
@@ -33,7 +38,8 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 function defaultState() {
   return {
-    version: 2, currentPage: 'today', theme: 'light', appearance: 'normal', minimalColor: '#315f86',
+    version: 2, currentPage: 'today', theme: 'light', appearance: 'normal', minimalColor: '#315f86', showQuote: true,
+    weather: { place: 'Amsterdam', lat: 52.37, lon: 4.9 }, meta: { updatedAt: '' },
     tasks: [
       { id: uid(), text: 'Wasmachine aanzetten', person: 'Kees', category: 'Huishouden', due: todayKey(), done: false },
       { id: uid(), text: 'Boodschappenlijst controleren', person: 'Samen', category: 'Boodschappen', due: todayKey(), done: false }
@@ -75,66 +81,221 @@ function toast(message) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { el.hidden = true; }, 2400);
 }
-function saveState(message = '') {
+function saveState(message = '', { touch = true, sync = true } = {}) {
   try {
+    if (touch) state.meta.updatedAt = new Date().toISOString();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     const s = $('#saveState'); if (s) s.textContent = 'Lokaal bewaard';
     if (message) toast(message);
+    if (sync) scheduleSync();
     return true;
   } catch { toast('Opslag niet beschikbaar'); return false; }
 }
 
 /* ---------- Quote ---------- */
 function readCachedQuote() {
-  try { const c = JSON.parse(localStorage.getItem(QUOTE_KEY) || 'null'); return c && c.date === todayKey() && c.text ? c : null; }
+  try { const c = JSON.parse(localStorage.getItem(QUOTE_KEY) || 'null'); return c && c.markup ? c : null; }
   catch { return null; }
+}
+function quoteMarkup(text, author = '') {
+  return `<blockquote>${esc(text)}</blockquote>${author ? `<p class="muted">— ${esc(author)}</p>` : ''}`;
 }
 function quoteBodyMarkup() {
   const c = readCachedQuote();
   return c
-    ? `<blockquote>${esc(c.text)}</blockquote>${c.author ? `<p class="muted">— ${esc(c.author)}</p>` : ''}`
-    : '<p class="quote-note muted">De quote van vandaag is nu niet beschikbaar. Probeer het later opnieuw.</p>';
+    ? `<div class="quote-content">${c.markup}</div>`
+    : '<p class="quote-note muted">De quote van vandaag is nu niet beschikbaar. Hij wordt opgehaald zodra er verbinding is.</p>';
 }
 function renderQuote() {
-  const body = quoteBodyMarkup();
-  return `<section class="panel quote-panel"><div class="panel-heading"><div><p class="eyebrow">Dagelijkse inspiratie</p><h2>Quote van de dag</h2></div><span class="panel-icon">✦</span></div><div id="quoteBody">${body}</div></section>`;
+  if (!state.showQuote) return '';
+  return `<section class="panel quote-panel"><div class="panel-heading"><div><p class="eyebrow">Dagelijkse inspiratie</p><h2>Quote van de dag</h2></div><span class="panel-icon">✦</span></div><div id="quoteBody">${quoteBodyMarkup()}</div><p class="small-note"><a href="${QUOTE_RSS}" target="_blank" rel="noopener">Bron: BrainyQuote RSS</a></p></section>`;
 }
 function parseQuoteFromDom() {
   const src = $('#brainyQuoteSource');
   if (!src) return null;
-  const links = $$('a', src).map(a => a.textContent.trim()).filter(t => t && !/more quotes/i.test(t));
-  if (links.length) return { text: links[0], author: links[1] || '' };
   const clone = src.cloneNode(true);
   $$('script,a', clone).forEach(n => n.remove());
-  const text = clone.textContent.trim();
-  return text ? { text, author: '' } : null;
+  const text = clone.textContent.replace(/\s+/g, ' ').trim();
+  return text.length > 12 ? { text, author: '' } : null;
 }
 async function fetchQuoteFromRss() {
   const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
   const timer = ctrl && setTimeout(() => ctrl.abort(), 6000);
   try {
-    const res = await fetch('https://www.brainyquote.com/link/quotebr.rss', { signal: ctrl && ctrl.signal });
-    if (!res.ok) return null;
+    const res = await fetch(QUOTE_RSS, { cache: 'no-store', signal: ctrl && ctrl.signal });
+    if (!res.ok) throw new Error(`BrainyQuote gaf ${res.status}`);
     const xml = new DOMParser().parseFromString(await res.text(), 'application/xml');
     const item = xml.querySelector('item');
-    if (!item) return null;
+    if (!item) throw new Error('Geen quote in feed');
     const title = (item.querySelector('title')?.textContent || '').trim();
     const desc = new DOMParser().parseFromString(item.querySelector('description')?.textContent || '', 'text/html').body.textContent.trim();
     const generic = /^(today'?s )?quote/i.test(title);
     const text = generic ? desc : title;
     return text ? { text, author: generic || desc === title ? '' : desc } : null;
-  } catch { return null; }
-  finally { if (timer) clearTimeout(timer); }
+  } finally { if (timer) clearTimeout(timer); }
 }
+let quoteBusy = false;
 async function captureBrainyQuote() {
-  if (readCachedQuote()) return true;
-  let q = null;
-  try { q = parseQuoteFromDom() || await fetchQuoteFromRss(); } catch { q = null; }
-  if (!q || !q.text) return false;
-  try { localStorage.setItem(QUOTE_KEY, JSON.stringify({ date: todayKey(), text: q.text, author: q.author })); } catch { /* cache niet beschikbaar */ }
-  const box = $('#quoteBody');
-  if (box) box.innerHTML = quoteBodyMarkup();
-  return true;
+  const cached = readCachedQuote();
+  if ((cached && cached.date === todayKey()) || quoteBusy) return !!cached;
+  quoteBusy = true;
+  try {
+    let q = null;
+    try { q = await fetchQuoteFromRss(); } catch (err) { console.warn('Quote ophalen via RSS mislukt', err); }
+    if (!q) q = parseQuoteFromDom();
+    if (!q || !q.text) return !!cached;
+    try { localStorage.setItem(QUOTE_KEY, JSON.stringify({ date: todayKey(), markup: quoteMarkup(q.text, q.author) })); }
+    catch (err) { console.warn('Quote cache niet beschikbaar', err); }
+    const box = $('#quoteBody');
+    if (box) box.innerHTML = quoteBodyMarkup();
+    return true;
+  } finally { quoteBusy = false; }
+}
+
+/* ---------- Weer ---------- */
+const WEATHER_CODES = { 0: 'Helder', 1: 'Overwegend helder', 2: 'Half bewolkt', 3: 'Bewolkt', 45: 'Mist', 48: 'Rijpmist', 51: 'Lichte motregen', 53: 'Motregen', 55: 'Zware motregen', 61: 'Lichte regen', 63: 'Regen', 65: 'Zware regen', 71: 'Lichte sneeuw', 73: 'Sneeuw', 75: 'Zware sneeuw', 80: 'Lichte buien', 81: 'Buien', 82: 'Zware buien', 95: 'Onweer', 96: 'Onweer met hagel', 99: 'Zwaar onweer met hagel' };
+const weatherLabel = c => WEATHER_CODES[c] || 'Onbekend';
+function weatherUrl() {
+  const w = state.weather;
+  return `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(w.lat)}&longitude=${encodeURIComponent(w.lon)}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=7`;
+}
+function weatherMarkup(d) {
+  const c = d.current, day = d.daily;
+  const days = day.time.map((t, i) => `<li class="list-card"><div><strong>${esc(new Date(`${t}T12:00:00`).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'short' }))}</strong><small>${esc(weatherLabel(day.weather_code[i]))} · ${Math.round(day.temperature_2m_min[i])}° – ${Math.round(day.temperature_2m_max[i])}° · neerslagkans ${day.precipitation_probability_max[i] ?? 0}%</small></div></li>`).join('');
+  return `<p class="weather-now"><strong>${Math.round(c.temperature_2m)}°C</strong> ${esc(weatherLabel(c.weather_code))}</p>
+    <p class="muted">Voelt als ${Math.round(c.apparent_temperature)}° · wind ${Math.round(c.wind_speed_10m)} km/u · luchtvochtigheid ${Math.round(c.relative_humidity_2m)}%</p>
+    <ul class="data-list">${days}</ul>`;
+}
+async function loadWeather() {
+  const box = $('#weatherBody');
+  if (!box) return;
+  let cache = null;
+  try { cache = JSON.parse(localStorage.getItem(WEATHER_KEY) || 'null'); } catch { cache = null; }
+  const key = `${state.weather.lat},${state.weather.lon}`;
+  if (cache && cache.key === key) box.innerHTML = weatherMarkup(cache.data);
+  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
+  const timer = ctrl && setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const res = await fetch(weatherUrl(), { signal: ctrl && ctrl.signal });
+    if (!res.ok) throw new Error(`Open-Meteo gaf ${res.status}`);
+    const data = await res.json();
+    if (!data.current || !data.daily) throw new Error('Onverwacht antwoord');
+    try { localStorage.setItem(WEATHER_KEY, JSON.stringify({ key, data })); } catch { /* cache niet beschikbaar */ }
+    const target = $('#weatherBody');
+    if (target) target.innerHTML = weatherMarkup(data);
+  } catch (err) {
+    console.warn('Weer laden mislukt', err);
+    const target = $('#weatherBody');
+    if (target && !(cache && cache.key === key)) target.innerHTML = '<p class="quote-note muted">Het weer kan nu niet worden geladen. Controleer je verbinding; er wordt geen voorspelling verzonnen.</p>';
+  } finally { if (timer) clearTimeout(timer); }
+}
+function renderWeather() {
+  const w = state.weather;
+  return `<section class="panel weather-panel"><div class="panel-heading"><div><p class="eyebrow">${esc(w.place)}</p><h2>Weer</h2></div><span class="panel-icon">☀</span></div>
+    <div id="weatherBody"><p class="muted">Weer laden…</p></div>
+    <form class="inline-form" data-weather-form><input name="place" value="${esc(w.place)}" placeholder="Plaats" aria-label="Plaatsnaam" required><input name="lat" type="number" step="any" min="-90" max="90" value="${esc(w.lat)}" aria-label="Breedtegraad" required><input name="lon" type="number" step="any" min="-180" max="180" value="${esc(w.lon)}" aria-label="Lengtegraad" required><button class="button button-secondary">Locatie opslaan</button><button type="button" class="button button-secondary" data-weather-locate>Mijn locatie</button></form></section>`;
+}
+
+/* ---------- Synchronisatie (Supabase, optioneel) ---------- */
+const MIN_CODE = 12;
+function loadSyncConfig() {
+  try {
+    const c = JSON.parse(localStorage.getItem(SYNC_KEY) || 'null') || {};
+    return { projectUrl: String(c.projectUrl || ''), anonKey: String(c.anonKey || ''), householdCode: String(c.householdCode || ''), lastSyncedAt: String(c.lastSyncedAt || '') };
+  } catch { return { projectUrl: '', anonKey: '', householdCode: '', lastSyncedAt: '' }; }
+}
+let syncConfig = loadSyncConfig();
+let syncing = false, syncError = '', syncTimer;
+const validProjectUrl = u => { try { return new URL(u).protocol === 'https:'; } catch { return false; } };
+const syncConfigured = () => validProjectUrl(syncConfig.projectUrl) && !!syncConfig.anonKey && syncConfig.householdCode.length >= MIN_CODE;
+function saveSyncConfig() { try { localStorage.setItem(SYNC_KEY, JSON.stringify(syncConfig)); } catch { toast('Opslag niet beschikbaar'); } }
+function updateSyncBadge() {
+  const b = $('#syncState');
+  if (!b) return;
+  b.textContent = !syncConfigured() ? 'Alleen dit apparaat' : !navigator.onLine ? 'Offline · later synchroniseren' : syncing ? 'Synchroniseren…' : syncError ? 'Sync controleren' : syncConfig.lastSyncedAt ? 'Apparaten gelijk' : 'Sync gereed';
+  b.classList.toggle('connected', syncConfigured() && !syncing && !syncError);
+}
+const bytesToB64 = bytes => btoa(String.fromCharCode(...bytes));
+const b64ToBytes = v => Uint8Array.from(atob(v), c => c.charCodeAt(0));
+async function sha256(v) {
+  const h = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(v));
+  return [...new Uint8Array(h)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function deriveKey(code, salt) {
+  const m = await crypto.subtle.importKey('raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 250000 }, m, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+async function encryptData(value, code) {
+  const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+  const enc = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await deriveKey(code, salt), new TextEncoder().encode(JSON.stringify(value)));
+  return { version: 1, salt: bytesToB64(salt), iv: bytesToB64(iv), ciphertext: bytesToB64(new Uint8Array(enc)) };
+}
+async function decryptData(p, code) {
+  const dec = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBytes(p.iv) }, await deriveKey(code, b64ToBytes(p.salt)), b64ToBytes(p.ciphertext));
+  return JSON.parse(new TextDecoder().decode(dec));
+}
+function supabaseHeaders() {
+  const h = { apikey: syncConfig.anonKey, 'Content-Type': 'application/json' };
+  if (!syncConfig.anonKey.startsWith('sb_publishable_')) h.Authorization = 'Bearer ' + syncConfig.anonKey;
+  return h;
+}
+const syncPayload = st => { const o = { ...st }; DEVICE_KEYS.forEach(k => delete o[k]); return o; };
+async function syncNow({ manual = false } = {}) {
+  if (!syncConfigured() || syncing || !navigator.onLine) {
+    if (manual) toast(!navigator.onLine ? 'Geen internetverbinding' : 'Vul eerst de synchronisatie-instellingen in');
+    return;
+  }
+  syncing = true; syncError = ''; updateSyncBadge();
+  try {
+    if (!(window.crypto && crypto.subtle)) throw new Error('Versleuteling vereist HTTPS');
+    const id = await sha256(syncConfig.householdCode);
+    const base = syncConfig.projectUrl.replace(/\/+$/, '');
+    const res = await fetch(`${base}/rest/v1/household_data?id=eq.${id}&select=payload,updated_at`, { headers: supabaseHeaders() });
+    if (!res.ok) throw new Error(`Supabase gaf ${res.status}`);
+    const rows = await res.json();
+    const remote = rows[0]?.payload ? await decryptData(rows[0].payload, syncConfig.householdCode) : null;
+    const localUpdated = state.meta.updatedAt, remoteUpdated = remote?.meta?.updatedAt || rows[0]?.updated_at || '';
+    const first = !syncConfig.lastSyncedAt;
+    const remoteNewer = remote && Date.parse(remoteUpdated) > (Date.parse(localUpdated) || 0);
+    const local = syncPayload(state);
+    if (remote && Core.hasConcurrentChanges(localUpdated, remoteUpdated, syncConfig.lastSyncedAt, local, syncPayload(merge(defaultState(), remote)))) toast('Op beide apparaten is gewijzigd; de nieuwste versie wordt gebruikt');
+    if (remote && (first || remoteNewer)) {
+      const device = Object.fromEntries(DEVICE_KEYS.map(k => [k, state[k]]));
+      state = { ...merge(defaultState(), remote), ...device };
+      saveState('', { touch: false, sync: false });
+      renderPage(state.currentPage);
+    } else if (!remote || !Core.sameData(local, syncPayload(merge(defaultState(), remote)))) {
+      const up = await fetch(`${base}/rest/v1/household_data?on_conflict=id`, {
+        method: 'POST', headers: { ...supabaseHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify({ id, payload: await encryptData(local, syncConfig.householdCode), updated_at: localUpdated || new Date().toISOString() })
+      });
+      if (!up.ok) throw new Error(`Opslaan gaf ${up.status}`);
+    }
+    syncConfig.lastSyncedAt = new Date().toISOString();
+    saveSyncConfig();
+    if (manual) toast('Apparaten zijn bijgewerkt');
+  } catch (err) {
+    console.error('Synchronisatie mislukt', err);
+    syncError = err.message || 'Synchronisatie mislukt';
+    if (manual) toast('Synchronisatie lukt nog niet. Controleer de instellingen.');
+  } finally { syncing = false; updateSyncBadge(); }
+}
+function scheduleSync() {
+  if (!syncConfigured()) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => syncNow(), 1200);
+}
+function handleSyncForm(data) {
+  const next = { projectUrl: String(data.projectUrl || '').trim(), anonKey: String(data.anonKey || '').trim(), householdCode: String(data.householdCode || '').trim() };
+  if (next.projectUrl && !validProjectUrl(next.projectUrl)) return toast('Gebruik een https-projecturl');
+  if (next.householdCode && next.householdCode.length < MIN_CODE) return toast(`Kies een huishoudcode van minimaal ${MIN_CODE} tekens`);
+  const changed = ['projectUrl', 'anonKey', 'householdCode'].some(k => next[k] !== syncConfig[k]);
+  syncConfig = { ...syncConfig, ...next, lastSyncedAt: changed ? '' : syncConfig.lastSyncedAt };
+  syncError = '';
+  saveSyncConfig();
+  toast(syncConfigured() ? 'Synchronisatie opgeslagen' : 'Opgeslagen; vul alle velden in om te synchroniseren');
+  renderPage('settings'); updateSyncBadge();
+  if (syncConfigured()) syncNow({ manual: true });
 }
 
 /* ---------- Pagina's ---------- */
@@ -177,9 +338,22 @@ function renderCar() {
   return `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Auto</p><h2>Autogegevens</h2></div></div><form class="stack-form form-grid" data-car-form>${CAR_FIELDS.map(([k, l, t]) => `<div class="field"><label>${l}<input name="${k}" type="${t || 'text'}" value="${esc(state.car[k] || '')}"></label></div>`).join('')}<button class="button button-primary">Opslaan</button></form></section>`;
 }
 function renderSettings() {
-  return `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Weergave</p><h2>Instellingen</h2></div></div>
-    <div class="setting-row"><label>Thema <select data-setting="theme"><option value="light" ${state.theme === 'light' ? 'selected' : ''}>Licht</option><option value="dark" ${state.theme === 'dark' ? 'selected' : ''}>Donker</option></select></label></div>
-    <p class="small-note">Gegevens worden lokaal in je browser bewaard. Gebruik de knoppen links voor een back-up.</p></section>`;
+  const configured = syncConfigured();
+  const opt = (v, l, cur) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`;
+  return `<div class="page-grid"><section class="panel"><div class="panel-heading"><div><p class="eyebrow">Weergave</p><h2>Instellingen</h2></div></div>
+    <div class="setting-row"><label>Thema <select data-setting="theme">${opt('light', 'Licht', state.theme)}${opt('dark', 'Donker', state.theme)}</select></label></div>
+    <div class="setting-row"><label>Uiterlijk <select data-setting="appearance">${opt('normal', 'Normaal', state.appearance)}${opt('minimal', 'Minimalistisch', state.appearance)}</select></label></div>
+    <div class="setting-row"><label>Accentkleur <input type="color" data-setting="minimalColor" value="${esc(state.minimalColor)}"></label></div>
+    <div class="setting-row"><label><input type="checkbox" data-setting="showQuote" ${state.showQuote ? 'checked' : ''}> Quote van de dag tonen op Vandaag</label></div>
+    <p class="small-note">Gegevens worden lokaal in je browser bewaard. Gebruik de knoppen links voor een back-up.</p></section>
+    <section class="panel"><div class="panel-heading"><div><p class="eyebrow">Apparaten</p><h2>Synchronisatie (optioneel)</h2></div><span class="panel-icon">${configured ? '✓' : '○'}</span></div>
+    <p class="small-note">Standaard blijft alles alleen op dit apparaat. Vul je eigen Supabase-project en een gedeelde geheime huishoudcode in om te synchroniseren. Gegevens worden versleuteld met de huishoudcode voordat ze worden verstuurd.</p>
+    <form id="syncForm" class="stack-form form-grid">
+      <div class="field"><label>Project-URL<input name="projectUrl" type="url" value="${esc(syncConfig.projectUrl)}" placeholder="https://jouwproject.supabase.co" autocomplete="off"></label></div>
+      <div class="field"><label>Publishable / anon key<input name="anonKey" type="password" value="${esc(syncConfig.anonKey)}" autocomplete="off"></label></div>
+      <div class="field"><label>Huishoudcode (minimaal ${MIN_CODE} tekens)<input name="householdCode" type="password" value="${esc(syncConfig.householdCode)}" minlength="${MIN_CODE}" autocomplete="off"></label></div>
+      <div class="button-row"><button class="button button-primary">Bewaren</button>${configured ? '<button type="button" class="button button-secondary" data-sync-now>Nu synchroniseren</button><button type="button" class="button button-secondary" data-sync-clear>Synchronisatie uitzetten</button>' : ''}</div>
+    </form></section></div>`;
 }
 function renderPage(page = state.currentPage) {
   if (!PAGES[page]) page = 'today';
@@ -193,7 +367,8 @@ function renderPage(page = state.currentPage) {
   if (add) add.hidden = !SECTIONS[page];
   renderNav();
   if (!view) return;
-  view.innerHTML = page === 'today' ? renderToday() : page === 'budget' ? renderBudget() : page === 'car' ? renderCar() : page === 'settings' ? renderSettings() : renderSection(page);
+  view.innerHTML = page === 'today' ? renderToday() : page === 'weather' ? renderWeather() : page === 'budget' ? renderBudget() : page === 'car' ? renderCar() : page === 'settings' ? renderSettings() : renderSection(page);
+  if (page === 'weather') loadWeather();
 }
 function renderNav() {
   const nav = $$cached('#nav');
@@ -205,6 +380,8 @@ function renderNav() {
 }
 function applyTheme() {
   document.documentElement.dataset.theme = state.theme;
+  document.documentElement.dataset.appearance = state.appearance;
+  document.documentElement.style.setProperty('--accent-minimal', state.minimalColor);
 }
 
 /* ---------- Acties ---------- */
@@ -305,6 +482,13 @@ function handleClick(e) {
     else if (a === 'export-prices') exportPrices();
     return;
   }
+  if (t.closest('[data-sync-now]')) { syncNow({ manual: true }); return; }
+  if (t.closest('[data-sync-clear]')) { syncConfig = { projectUrl: '', anonKey: '', householdCode: '', lastSyncedAt: '' }; saveSyncConfig(); toast('Synchronisatie uitgezet'); renderPage('settings'); updateSyncBadge(); return; }
+  if (t.closest('[data-weather-locate]')) {
+    if (!navigator.geolocation) { toast('Locatie niet beschikbaar'); return; }
+    navigator.geolocation.getCurrentPosition(p => { state.weather = { place: 'Mijn locatie', lat: +p.coords.latitude.toFixed(3), lon: +p.coords.longitude.toFixed(3) }; saveState('Locatie opgeslagen'); renderPage('weather'); }, () => toast('Locatie niet toegestaan'));
+    return;
+  }
   if (t.closest('#addBtn')) { openItemDialog(); return; }
   if (t.closest('[data-close-dialog]')) { closeDialog('#itemDialog'); return; }
   if (t.closest('[data-close-question]')) { closeDialog('#questionDialog'); return; }
@@ -323,6 +507,9 @@ function handleChange(e) {
     const item = listOf(t.dataset.toggle).find(i => i.id === t.dataset.id);
     if (item) { item.done = t.checked; saveState(); renderPage(state.currentPage); }
   } else if (t.matches && t.matches('[data-setting="theme"]')) { state.theme = t.value; applyTheme(); saveState('Opgeslagen'); }
+  else if (t.matches && t.matches('[data-setting="appearance"]')) { state.appearance = t.value; applyTheme(); saveState('Opgeslagen'); }
+  else if (t.matches && t.matches('[data-setting="minimalColor"]')) { state.minimalColor = t.value; applyTheme(); saveState('Opgeslagen'); }
+  else if (t.matches && t.matches('[data-setting="showQuote"]')) { state.showQuote = t.checked; saveState('Opgeslagen'); }
   else if (t.id === 'restoreInput') { importData(t.files && t.files[0]); t.value = ''; }
   else if (t.id === 'priceFileInput') { importPrices(t.files && t.files[0]); t.value = ''; }
 }
@@ -333,6 +520,14 @@ function handleSubmit(e) {
   if (f.matches('[data-quick-task]')) { e.preventDefault(); addTask(data.text); }
   else if (f.matches('[data-budget-form]')) { e.preventDefault(); state.budget.monthly = Number(data.monthly) || 0; saveState('Budget opgeslagen'); renderPage('budget'); }
   else if (f.matches('[data-budget-item]')) { e.preventDefault(); state.budget.items.unshift({ id: uid(), name: data.name, amount: Number(data.amount) || 0 }); saveState('Toegevoegd'); renderPage('budget'); }
+  else if (f.id === 'syncForm') { e.preventDefault(); handleSyncForm(data); }
+  else if (f.matches('[data-weather-form]')) {
+    e.preventDefault();
+    const lat = Number(data.lat), lon = Number(data.lon);
+    if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) { toast('Ongeldige coördinaten'); return; }
+    state.weather = { place: String(data.place || '').trim() || 'Mijn locatie', lat, lon };
+    saveState('Locatie opgeslagen'); renderPage('weather');
+  }
   else if (f.matches('[data-car-form]')) { e.preventDefault(); state.car = { ...state.car, ...data }; saveState('Autogegevens opgeslagen'); }
   else if (f.id === 'itemForm') {
     e.preventDefault();
@@ -357,6 +552,10 @@ function init() {
   document.addEventListener('change', handleChange);
   document.addEventListener('submit', handleSubmit);
   renderPage(state.currentPage);
+  window.addEventListener('online', () => { captureBrainyQuote(); updateSyncBadge(); scheduleSync(); });
+  window.addEventListener('offline', updateSyncBadge);
+  updateSyncBadge();
   captureBrainyQuote();
+  scheduleSync();
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
