@@ -1,37 +1,19 @@
-# Samen Thuis — opbouw in lagen
+# Samen Thuis — roadmap
 
-## Laag 1 — Achtergrond en frame (in deze testbasis aanwezig)
-- Donkerblauwe achtergrond en rustige kleurverlopen.
-- Sidebar op grote schermen, topbar en contentframe.
-- Mobiele navigatie, veilige ondermarge en responsieve pagina-afstanden.
+## Gereed
 
-## Laag 2 — Design system (in deze testbasis aanwezig)
-- Kleuren, typografie, spacing, afgeronde hoeken en schaduwen als centrale tokens.
-- Primaire en secundaire knoppen, tekstvelden, kaarten, stat-blokken en feedbackmeldingen.
-- Toegankelijke focus-states en ondersteuning voor reduced motion.
+- Local-first dashboard en pagina's voor taken, agenda, challenges, programma's, weekmenu, boodschappen, acties, voorraad, woning, auto, budget, date ideeën, reizen, extra's en instellingen.
+- Dashboardonderdelen tonen, verbergen en ordenen.
+- Lokale JSON-back-up en herstel; bestaande localStorage-sleutel blijft behouden.
+- Prijzen importeren en exporteren.
+- Optionele Open-Meteo-weerweergave en BrainyQuote-feed met lokale cache.
+- Optionele versleutelde Supabase-synchronisatie (zie de beperkingen en setup in `ARCHITECTURE.md`).
+- Licht/donker thema, responsieve styling, feedbackmeldingen en reduced-motion ondersteuning.
+- API-foutafhandeling, back-upvalidatie en unit-tests.
+- Basis offline-cache voor statische bestanden via een service worker.
 
-## Laag 3 — Navigatie en pagina-skeletten (in deze testbasis aanwezig)
-- Vandaag, Agenda, Taken, Challenges, Weekmenu, Boodschappen, Voorraad, Woning, Budget, Date ideeën, Reizen, Extra en Instellingen.
-- De nog niet gebouwde pagina's zijn duidelijk gemarkeerd als skelet.
+## Nog te doen
 
-## Laag 4 — Functies per pagina (volgende stappen)
-1. Vandaag: slim dagoverzicht, focus, taken en snel toevoegen.
-2. Taken en Huishouden: eerst de bestaande v16-flexibele frequenties en voltooiingslogica analyseren en daarna integreren.
-3. Agenda: weekoverzicht en Kees/Daphne/Samen.
-4. Challenges: universele doelen, dagelijkse vinkjes, streaks, punten en beloningen.
-5. Weekmenu, boodschappen en voorraad: koppelingen en gedeelde data.
-6. Budget, woning, reizen, date ideeën en documentenkluis.
-7. Zoeken, herinneringen, export/import en kwaliteitscontrole.
-
-## Laag 5 — Gegevens en privacy
-- Local-first blijven als uitgangspunt.
-- Gegevensschema en migraties documenteren.
-- Export/import en herstel testen vóór eventuele synchronisatie.
-- Supabase-sync is optioneel (client-side, tabel `household_data`); geen SDK-afhankelijkheid.
-
-## Laag 6 — Testen en releasen
-- Desktop, iPad en iPhone controleren.
-- Lege toestand, invoerfouten, verwijderen en verversen testen.
-- Opslag na refresh controleren.
-- Consolefouten en toegankelijkheid nalopen.
-- Pas na akkoord functies naar een andere branch/repository overzetten.
+- Veilige Supabase-authenticatie en toegangsbeleid voordat synchronisatie voor meerdere gebruikers wordt ingezet.
+- Pushnotificaties en eventueel een native mobiele wrapper, als daar behoefte aan ontstaat.
+- Uitbreiding van paginafuncties en geautomatiseerde browser-/toegankelijkheidstests.

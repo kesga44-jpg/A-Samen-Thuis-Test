@@ -43,9 +43,23 @@ export async function fetchQuoteFeed(url, options = {}) {
 export async function fetchWeatherForecast(url, options = {}) {
   const response = await fetchWithRetry(url, { timeout: 8000, ...options });
   const data = await response.json();
-  if (!data?.current || !Array.isArray(data.daily?.time)
-    || !Array.isArray(data.hourly?.time) || !Array.isArray(data.hourly?.temperature_2m)) {
-    throw new Error('Onverwacht weerbericht');
-  }
+  if (!isWeatherForecast(data)) throw new Error('Onverwacht weerbericht');
   return data;
+}
+
+export function isWeatherForecast(data) {
+  const currentFields = [
+    'temperature_2m', 'apparent_temperature', 'relative_humidity_2m',
+    'wind_speed_10m', 'weather_code'
+  ];
+  const dailyFields = [
+    'weather_code', 'temperature_2m_max', 'temperature_2m_min',
+    'precipitation_probability_max', 'precipitation_sum'
+  ];
+  const hourlyFields = ['temperature_2m', 'precipitation'];
+  if (!data?.current || !currentFields.every(key => Number.isFinite(data.current[key]))) return false;
+  const validSeries = (group, fields) => Array.isArray(group?.time)
+    && group.time.length > 0
+    && fields.every(key => Array.isArray(group[key]) && group[key].length === group.time.length);
+  return validSeries(data.daily, dailyFields) && validSeries(data.hourly, hourlyFields);
 }
