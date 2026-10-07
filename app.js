@@ -1,4 +1,9 @@
-const STORAGE_KEY = 'samenThuisV2';
+import { fetchQuoteFeed, fetchWeatherForecast, isWeatherForecast } from './api.js';
+import { bindHandlers } from './handlers.js';
+import { renderCollection, renderError } from './rendering.js';
+import { defaultState, loadState, mergeState, normalizeDashboard, persistState } from './state.js';
+import { escapeHtml as esc, todayKey, uid } from './utils.js';
+
 const QUOTE_KEY = 'samenThuisV2-quote';
 const WEATHER_KEY = 'samenThuisV2-weather';
 const SYNC_KEY = 'samenThuisV2-sync';
@@ -8,7 +13,6 @@ const DEVICE_KEYS = ['currentPage', 'theme', 'appearance', 'minimalColor', 'weat
 const DASH_WIDGETS = {
   tasks: 'Open taken', quote: 'Quote van de dag', question: 'Vraag van de dag', weather: 'Weer', agenda: 'Agenda', groceries: 'Boodschappen', challenges: 'Challenges'
 };
-const DASH_DEFAULT_VISIBLE = ['tasks', 'quote', 'question'];
 const PEOPLE = ['Kees', 'Daphne', 'Samen'];
 const PAGES = {
   today: 'Vandaag', weather: 'Weer', tasks: 'Taken', agenda: 'Agenda', challenges: 'Challenges', programs: "Programma's",
@@ -33,61 +37,13 @@ const SECTIONS = {
 const listOf = (page, st = state) => st[SECTIONS[page].key || page];
 const CAR_FIELDS = [['model', 'Model'], ['plate', 'Kenteken'], ['year', 'Bouwjaar'], ['mileage', 'Kilometerstand'], ['apkDate', 'APK-datum', 'date'], ['insuranceDate', 'Verzekering tot', 'date']];
 
-const uid = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
-const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const $ = (s, r = document) => r.querySelector(s);
 const refCache = {};
 const $$cached = id => { const el = refCache[id]; if (el && el.isConnected) return el; return (refCache[id] = document.querySelector(id)); };
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
-function defaultState() {
-  return {
-    version: 2, currentPage: 'today', theme: 'light', appearance: 'normal', minimalColor: '#315f86', showQuote: true, dashboard: [],
-    weather: { place: 'Amsterdam', lat: 52.37, lon: 4.9 }, meta: { updatedAt: '' },
-    tasks: [
-      { id: uid(), text: 'Wasmachine aanzetten', person: 'Kees', category: 'Huishouden', due: todayKey(), done: false },
-      { id: uid(), text: 'Boodschappenlijst controleren', person: 'Samen', category: 'Boodschappen', due: todayKey(), done: false }
-    ],
-    agenda: [], challenges: [
-      { id: uid(), title: '3× bewegen deze week', category: 'Sport', done: false },
-      { id: uid(), title: '30 minuten lezen', category: 'Lezen', done: false }
-    ],
-    programs: [], meals: [], groceries: [], deals: [], stock: [], home: [], dates: [], travel: [], extras: [],
-    budget: { monthly: 0, items: [] }, car: {}, dailyAnswers: {}, priceReferences: []
-  };
-}
-function merge(base, saved) {
-  const out = { ...base };
-  if (!saved || typeof saved !== 'object') return out;
-  Object.keys(base).forEach(k => {
-    if (!(k in saved)) return;
-    if (Array.isArray(base[k])) { if (Array.isArray(saved[k])) out[k] = saved[k]; }
-    else if (base[k] && typeof base[k] === 'object') { if (saved[k] && typeof saved[k] === 'object' && !Array.isArray(saved[k])) out[k] = { ...base[k], ...saved[k] }; }
-    else if (typeof saved[k] === typeof base[k]) out[k] = saved[k];
-  });
-  if (!Array.isArray(out.budget.items)) out.budget.items = [];
-  if (!PAGES[out.currentPage]) out.currentPage = 'today';
-  out.dashboard = normalizeDashboard(out.dashboard, out.showQuote);
-  return out;
-}
-function normalizeDashboard(list, showQuote = true) {
-  const seen = new Set();
-  const out = [];
-  (Array.isArray(list) ? list : []).forEach(e => {
-    if (e && DASH_WIDGETS[e.id] && !seen.has(e.id)) { seen.add(e.id); out.push({ id: e.id, visible: e.visible !== false }); }
-  });
-  Object.keys(DASH_WIDGETS).forEach(id => {
-    if (!seen.has(id)) out.push({ id, visible: id === 'quote' ? showQuote !== false : DASH_DEFAULT_VISIBLE.includes(id) });
-  });
-  return out;
-}
-function loadState() {
-  try { const raw = localStorage.getItem(STORAGE_KEY); return raw ? merge(defaultState(), JSON.parse(raw)) : defaultState(); }
-  catch { return defaultState(); }
-}
 let state = loadState();
 
-function esc(v = '') { return String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m])); }
 let toastTimer;
 function toast(message) {
   const el = $('#toast');
@@ -100,7 +56,7 @@ function toast(message) {
 function saveState(message = '', { touch = true, sync = true } = {}) {
   try {
     if (touch) state.meta.updatedAt = new Date().toISOString();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    persistState(state);
     const s = $('#saveState'); if (s) s.textContent = 'Lokaal bewaard';
     if (message) toast(message);
     if (sync) scheduleSync();
@@ -110,7 +66,14 @@ function saveState(message = '', { touch = true, sync = true } = {}) {
 
 /* ---------- Quote ---------- */
 function readCachedQuote() {
-  try { const c = JSON.parse(localStorage.getItem(QUOTE_KEY) || 'null'); return c && c.markup ? c : null; }
+  try {
+    const c = JSON.parse(localStorage.getItem(QUOTE_KEY) || 'null');
+    if (!c || typeof c.markup !== 'string') return null;
+    const parsed = new DOMParser().parseFromString(c.markup, 'text/html');
+    const text = parsed.querySelector('blockquote')?.textContent?.trim();
+    const author = parsed.querySelector('blockquote + p')?.textContent?.replace(/^—\s*/, '').trim() || '';
+    return text ? { date: typeof c.date === 'string' ? c.date : '', markup: quoteMarkup(text.slice(0, 500), author.slice(0, 100)) } : null;
+  }
   catch { return null; }
 }
 function quoteMarkup(text, author = '') {
@@ -118,9 +81,9 @@ function quoteMarkup(text, author = '') {
 }
 function quoteBodyMarkup() {
   const c = readCachedQuote();
-  return c
-    ? `<div class="quote-content">${c.markup}</div>`
-    : '<p class="quote-note muted">De quote van vandaag is nu niet beschikbaar. Hij wordt opgehaald zodra er verbinding is.</p>';
+  if (!c) return renderError('De quote van vandaag is nu niet beschikbaar.', 'quote');
+  const stale = c.date !== todayKey();
+  return `<div class="quote-content">${c.markup}</div>${stale ? renderError('De laatst opgeslagen quote wordt getoond.', 'quote') : ''}`;
 }
 function renderQuote() {
   if (!state.showQuote) return '';
@@ -134,22 +97,6 @@ function parseQuoteFromDom() {
   const text = clone.textContent.replace(/\s+/g, ' ').trim();
   return text.length > 12 ? { text, author: '' } : null;
 }
-async function fetchQuoteFromRss() {
-  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
-  const timer = ctrl && setTimeout(() => ctrl.abort(), 6000);
-  try {
-    const res = await fetch(QUOTE_RSS, { cache: 'no-store', signal: ctrl && ctrl.signal });
-    if (!res.ok) throw new Error(`BrainyQuote gaf ${res.status}`);
-    const xml = new DOMParser().parseFromString(await res.text(), 'application/xml');
-    const item = xml.querySelector('item');
-    if (!item) throw new Error('Geen quote in feed');
-    const title = (item.querySelector('title')?.textContent || '').trim();
-    const desc = new DOMParser().parseFromString(item.querySelector('description')?.textContent || '', 'text/html').body.textContent.trim();
-    const generic = /^(today'?s )?quote/i.test(title);
-    const text = generic ? desc : title;
-    return text ? { text, author: generic || desc === title ? '' : desc } : null;
-  } finally { if (timer) clearTimeout(timer); }
-}
 let quoteBusy = false;
 async function captureBrainyQuote() {
   const cached = readCachedQuote();
@@ -157,9 +104,15 @@ async function captureBrainyQuote() {
   quoteBusy = true;
   try {
     let q = null;
-    try { q = await fetchQuoteFromRss(); } catch (err) { console.warn('Quote ophalen via RSS mislukt', err); }
+    try {
+      if (navigator.onLine) q = await fetchQuoteFeed(QUOTE_RSS);
+    } catch (err) { console.warn('Quote ophalen via RSS mislukt', err); }
     if (!q) q = parseQuoteFromDom();
-    if (!q || !q.text) return !!cached;
+    if (!q || !q.text) {
+      const box = $('#quoteBody');
+      if (box) box.innerHTML = quoteBodyMarkup();
+      return !!cached;
+    }
     try { localStorage.setItem(QUOTE_KEY, JSON.stringify({ date: todayKey(), markup: quoteMarkup(q.text, q.author) })); }
     catch (err) { console.warn('Quote cache niet beschikbaar', err); }
     const box = $('#quoteBody');
@@ -230,22 +183,26 @@ async function loadWeather() {
   let cache = null;
   try { cache = JSON.parse(localStorage.getItem(WEATHER_KEY) || 'null'); } catch { cache = null; }
   const key = `${state.weather.lat},${state.weather.lon}`;
-  if (cache && cache.key === key) box.innerHTML = weatherMarkup(cache.data);
-  const ctrl = typeof AbortController === 'function' ? new AbortController() : null;
-  const timer = ctrl && setTimeout(() => ctrl.abort(), 8000);
+  const hasCache = cache && cache.key === key && isWeatherForecast(cache.data);
+  if (hasCache) box.innerHTML = weatherMarkup(cache.data);
+  if (!navigator.onLine) {
+    box.innerHTML = hasCache
+      ? `${weatherMarkup(cache.data)}${renderError('Offline. De laatst opgeslagen verwachting wordt getoond.', 'weather')}`
+      : renderError('Geen internetverbinding. Het weer wordt geladen zodra je weer online bent.', 'weather');
+    return;
+  }
   try {
-    const res = await fetch(weatherUrl(), { signal: ctrl && ctrl.signal });
-    if (!res.ok) throw new Error(`Open-Meteo gaf ${res.status}`);
-    const data = await res.json();
-    if (!data.current || !data.daily) throw new Error('Onverwacht antwoord');
+    const data = await fetchWeatherForecast(weatherUrl());
     try { localStorage.setItem(WEATHER_KEY, JSON.stringify({ key, data })); } catch { /* cache niet beschikbaar */ }
     const target = $('#weatherBody');
     if (target) target.innerHTML = weatherMarkup(data);
   } catch (err) {
     console.warn('Weer laden mislukt', err);
     const target = $('#weatherBody');
-    if (target && !(cache && cache.key === key)) target.innerHTML = '<p class="quote-note muted">Het weer kan nu niet worden geladen. Controleer je verbinding; er wordt geen voorspelling verzonnen.</p>';
-  } finally { if (timer) clearTimeout(timer); }
+    if (target) target.innerHTML = hasCache
+      ? `${weatherMarkup(cache.data)}${renderError('De actuele verwachting kon niet worden opgehaald; de laatst opgeslagen gegevens worden getoond.', 'weather')}`
+      : renderError('Het weer kan nu niet worden geladen. Controleer je verbinding; er wordt geen voorspelling verzonnen.', 'weather');
+  }
 }
 function renderWeather() {
   const w = state.weather;
@@ -316,13 +273,13 @@ async function syncNow({ manual = false } = {}) {
     const first = !syncConfig.lastSyncedAt;
     const remoteNewer = remote && Date.parse(remoteUpdated) > (Date.parse(localUpdated) || 0);
     const local = syncPayload(state);
-    if (remote && Core.hasConcurrentChanges(localUpdated, remoteUpdated, syncConfig.lastSyncedAt, local, syncPayload(merge(defaultState(), remote)))) toast('Op beide apparaten is gewijzigd; de nieuwste versie wordt gebruikt');
+    if (remote && Core.hasConcurrentChanges(localUpdated, remoteUpdated, syncConfig.lastSyncedAt, local, syncPayload(mergeState(defaultState(), remote)))) toast('Op beide apparaten is gewijzigd; de nieuwste versie wordt gebruikt');
     if (remote && (first || remoteNewer)) {
       const device = Object.fromEntries(DEVICE_KEYS.map(k => [k, state[k]]));
-      state = { ...merge(defaultState(), remote), ...device };
+      state = { ...mergeState(defaultState(), remote), ...device };
       saveState('', { touch: false, sync: false });
       renderPage(state.currentPage);
-    } else if (!remote || !Core.sameData(local, syncPayload(merge(defaultState(), remote)))) {
+    } else if (!remote || !Core.sameData(local, syncPayload(mergeState(defaultState(), remote)))) {
       const up = await fetch(`${base}/rest/v1/household_data?on_conflict=id`, {
         method: 'POST', headers: { ...supabaseHeaders(), Prefer: 'resolution=merge-duplicates,return=minimal' },
         body: JSON.stringify({ id, payload: await encryptData(local, syncConfig.householdCode), updated_at: localUpdated || new Date().toISOString() })
@@ -363,7 +320,7 @@ function itemMarkup(page, item) {
   return `<li class="list-card task-row ${item.done ? 'is-done' : ''}">${check}<div><strong>${esc(s.title(item))}</strong><small>${esc(s.meta(item))}</small></div><button class="icon-button task-delete" data-delete="${page}" data-id="${esc(item.id)}" aria-label="Verwijderen">×</button></li>`;
 }
 function listMarkup(page, items = listOf(page)) {
-  return `<ul class="data-list task-list">${items.map(i => itemMarkup(page, i)).join('') || `<li class="empty-row">${esc(SECTIONS[page].empty)}</li>`}</ul>`;
+  return `<ul class="data-list task-list">${renderCollection(items, i => itemMarkup(page, i), esc(SECTIONS[page].empty))}</ul>`;
 }
 function weatherSummary() {
   let cache = null;
@@ -505,7 +462,7 @@ function importData(file) {
   if (!file) return;
   const r = new FileReader();
   r.onload = () => {
-    try { state = merge(defaultState(), JSON.parse(r.result)); applyTheme(); saveState('Back-up geladen'); renderPage(state.currentPage); }
+    try { state = mergeState(defaultState(), JSON.parse(r.result)); applyTheme(); saveState('Back-up geladen'); renderPage(state.currentPage); }
     catch { toast('Back-up kon niet worden geladen'); }
   };
   r.readAsText(file);
@@ -523,7 +480,12 @@ function importPrices(file) {
     try {
       const text = String(r.result);
       let list;
-      if (/\.json$/i.test(file.name)) { const d = JSON.parse(text); list = (Array.isArray(d) ? d : d.products || []).map(p => ({ product: p.product || p.name, store: p.store || '', price: Number(p.price) })); }
+      if (/\.json$/i.test(file.name)) {
+        const d = JSON.parse(text);
+        list = (Array.isArray(d) ? d : d?.products || [])
+          .filter(p => p && typeof p === 'object')
+          .map(p => ({ product: p.product || p.name, store: p.store || '', price: Number(p.price) }));
+      }
       else {
         list = [];
         for (const line of text.split(/\r?\n/)) {
@@ -539,6 +501,7 @@ function importPrices(file) {
       saveState(`${list.length} prijzen geïmporteerd`);
     } catch { toast('Prijsbestand kon niet worden gelezen'); }
   };
+  r.onerror = () => toast('Prijsbestand kon niet worden gelezen');
   r.readAsText(file);
 }
 
@@ -554,6 +517,13 @@ function handleClick(e) {
     if (a === 'backup') exportData();
     else if (a === 'restore') $('#restoreInput')?.click();
     else if (a === 'export-prices') exportPrices();
+    else if (a === 'import-prices') $('#priceFileInput')?.click();
+    return;
+  }
+  const retry = t.closest('[data-retry]');
+  if (retry) {
+    if (retry.dataset.retry === 'weather') loadWeather();
+    else if (retry.dataset.retry === 'quote') captureBrainyQuote();
     return;
   }
   const dm = t.closest('[data-dash-move]');
@@ -633,12 +603,18 @@ function handleSubmit(e) {
 
 function init() {
   applyTheme();
-  document.addEventListener('click', handleClick);
-  document.addEventListener('change', handleChange);
-  document.addEventListener('submit', handleSubmit);
+  bindHandlers({ click: handleClick, change: handleChange, submit: handleSubmit });
   renderPage(state.currentPage);
-  window.addEventListener('online', () => { captureBrainyQuote(); updateSyncBadge(); scheduleSync(); });
+  window.addEventListener('online', () => {
+    captureBrainyQuote();
+    if (state.currentPage === 'weather') loadWeather();
+    updateSyncBadge();
+    scheduleSync();
+  });
   window.addEventListener('offline', updateSyncBadge);
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(error => console.warn('Service worker niet beschikbaar', error));
+  }
   updateSyncBadge();
   captureBrainyQuote();
   scheduleSync();

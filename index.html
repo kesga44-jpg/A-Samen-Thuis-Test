@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="nl">
 <head>
   <meta charset="UTF-8">
@@ -22,14 +22,15 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar" aria-label="Hoofdnavigatie">
-      <div class="brand"><span class="brand-mark">S</span><div><strong>Samen Thuis</strong><small>Kees & Daphne</small></div></div>
+      <div class="brand"><span class="brand-mark">S</span><div><strong>Samen Thuis</strong><small>Kees &amp; Daphne</small></div></div>
       <nav id="nav"></nav>
       <div class="sidebar-footer">
-        <button class="nav-item" data-action="backup"><span>↥</span> Back-up maken</button>
-        <button class="nav-item" data-action="restore"><span>↧</span> Back-up laden</button>
-        <button class="nav-item" data-action="export-prices"><span>💰</span> Prijzen exporteren</button>
+        <button type="button" class="nav-item" data-action="backup"><span>↥</span> Back-up maken</button>
+        <button type="button" class="nav-item" data-action="restore"><span>↧</span> Back-up laden</button>
+        <button type="button" class="nav-item" data-action="import-prices"><span>💰</span> Prijzen importeren</button>
+        <button type="button" class="nav-item" data-action="export-prices"><span>💰</span> Prijzen exporteren</button>
         <input id="restoreInput" type="file" accept="application/json" hidden>
-        <input id="priceFileInput" type="file" accept=".pdf,.txt,.csv,.json,text/plain,text/csv,application/json,application/pdf" hidden>
+        <input id="priceFileInput" type="file" accept=".txt,.csv,.json,text/plain,text/csv,application/json" hidden>
       </div>
     </aside>
 
@@ -39,7 +40,7 @@
         <div class="top-actions">
           <span id="syncState" class="sync-state" title="Synchronisatiestatus">Alleen dit apparaat</span>
           <span id="saveState" class="save-state">Lokaal bewaard</span>
-          <button id="addBtn" class="primary">＋ Toevoegen</button>
+          <button id="addBtn" type="button" class="primary">＋ Toevoegen</button>
         </div>
       </header>
       <div id="view" class="view" aria-live="polite"></div>
@@ -79,14 +80,14 @@
     </form>
   </dialog>
 
-  <div id="toast" class="toast" role="status" hidden style="position:fixed;right:20px;bottom:20px;z-index:100"></div>
+  <div id="toast" class="toast" role="status" hidden></div>
 
-  <div id="brainyQuoteSource" class="brainy-source" aria-hidden="true">
+  <div id="brainyQuoteSource" class="brainy-source" hidden>
     <script src="https://www.brainyquote.com/link/quotebr.js"></script>
     <a href="https://www.brainyquote.com/quote_of_the_day" target="_blank" rel="nofollow noopener">more Quotes</a>
   </div>
 
   <script src="data-core.js?v=3"></script>
-  <script src="app.js?v=3"></script>
+  <script type="module" src="app.js?v=4"></script>
 </body>
 </html>
