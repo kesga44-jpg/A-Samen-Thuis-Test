@@ -1,0 +1,8 @@
+{
+  "name": "samen-thuis-test",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
