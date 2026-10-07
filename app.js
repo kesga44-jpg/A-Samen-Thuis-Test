@@ -4,7 +4,11 @@ const WEATHER_KEY = 'samenThuisV2-weather';
 const SYNC_KEY = 'samenThuisV2-sync';
 const QUOTE_RSS = 'https://www.brainyquote.com/link/quotebr.rss';
 const Core = globalThis.SamenThuisCore;
-const DEVICE_KEYS = ['currentPage', 'theme', 'appearance', 'minimalColor', 'weather', 'showQuote'];
+const DEVICE_KEYS = ['currentPage', 'theme', 'appearance', 'minimalColor', 'weather', 'showQuote', 'dashboard'];
+const DASH_WIDGETS = {
+  tasks: 'Open taken', quote: 'Quote van de dag', question: 'Vraag van de dag', weather: 'Weer', agenda: 'Agenda', groceries: 'Boodschappen', challenges: 'Challenges'
+};
+const DASH_DEFAULT_VISIBLE = ['tasks', 'quote', 'question'];
 const PEOPLE = ['Kees', 'Daphne', 'Samen'];
 const PAGES = {
   today: 'Vandaag', weather: 'Weer', tasks: 'Taken', agenda: 'Agenda', challenges: 'Challenges', programs: "Programma's",
@@ -38,7 +42,7 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 
 function defaultState() {
   return {
-    version: 2, currentPage: 'today', theme: 'light', appearance: 'normal', minimalColor: '#315f86', showQuote: true,
+    version: 2, currentPage: 'today', theme: 'light', appearance: 'normal', minimalColor: '#315f86', showQuote: true, dashboard: [],
     weather: { place: 'Amsterdam', lat: 52.37, lon: 4.9 }, meta: { updatedAt: '' },
     tasks: [
       { id: uid(), text: 'Wasmachine aanzetten', person: 'Kees', category: 'Huishouden', due: todayKey(), done: false },
@@ -63,6 +67,18 @@ function merge(base, saved) {
   });
   if (!Array.isArray(out.budget.items)) out.budget.items = [];
   if (!PAGES[out.currentPage]) out.currentPage = 'today';
+  out.dashboard = normalizeDashboard(out.dashboard, out.showQuote);
+  return out;
+}
+function normalizeDashboard(list, showQuote = true) {
+  const seen = new Set();
+  const out = [];
+  (Array.isArray(list) ? list : []).forEach(e => {
+    if (e && DASH_WIDGETS[e.id] && !seen.has(e.id)) { seen.add(e.id); out.push({ id: e.id, visible: e.visible !== false }); }
+  });
+  Object.keys(DASH_WIDGETS).forEach(id => {
+    if (!seen.has(id)) out.push({ id, visible: id === 'quote' ? showQuote !== false : DASH_DEFAULT_VISIBLE.includes(id) });
+  });
   return out;
 }
 function loadState() {
@@ -157,13 +173,55 @@ const WEATHER_CODES = { 0: 'Helder', 1: 'Overwegend helder', 2: 'Half bewolkt', 
 const weatherLabel = c => WEATHER_CODES[c] || 'Onbekend';
 function weatherUrl() {
   const w = state.weather;
-  return `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(w.lat)}&longitude=${encodeURIComponent(w.lon)}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=auto&forecast_days=7`;
+  return `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(w.lat)}&longitude=${encodeURIComponent(w.lon)}&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,precipitation_sum&hourly=temperature_2m,precipitation&timezone=auto&forecast_days=7`;
+}
+function weatherChart({ labels, temps, rain, title, tempLabel, rainLabel, tempLow }) {
+  const n = labels.length;
+  if (n < 2) return '';
+  const W = 640, H = 300, L = 40, R = 40, T = 24, B = 40, iw = W - L - R, ih = H - T - B;
+  const all = temps.concat(tempLow || []).filter(Number.isFinite);
+  if (!all.length) return '';
+  const lo = Math.floor(Math.min(...all) - 1), hi = Math.ceil(Math.max(...all) + 1);
+  const rMax = Math.max(1, ...rain.map(v => Number(v) || 0));
+  const x = i => L + (iw * (i + .5)) / n;
+  const yT = v => T + ih - ((v - lo) / (hi - lo || 1)) * ih;
+  const yR = v => T + ih - ((Number(v) || 0) / rMax) * ih;
+  const bw = Math.max(2, Math.min(28, (iw / n) * .6));
+  const line = (arr, cls) => `<polyline class="${cls}" points="${arr.map((v, i) => `${x(i).toFixed(1)},${yT(v).toFixed(1)}`).join(' ')}"/>`;
+  const step = Math.max(1, Math.ceil(n / 8));
+  const bars = rain.map((v, i) => `<rect x="${(x(i) - bw / 2).toFixed(1)}" y="${yR(v).toFixed(1)}" width="${bw.toFixed(1)}" height="${(T + ih - yR(v)).toFixed(1)}" rx="2" fill="var(--blue)" opacity=".28"/>`).join('');
+  const grid = [0, .5, 1].map(f => { const y = T + ih * f; return `<line class="weather-grid-line" x1="${L}" x2="${W - R}" y1="${y}" y2="${y}"/><text class="weather-axis" x="${L - 6}" y="${y + 4}" text-anchor="end">${Math.round(hi - (hi - lo) * f)}°</text><text class="weather-axis" x="${W - R + 6}" y="${y + 4}">${+(rMax * (1 - f)).toFixed(1)}</text>`; }).join('');
+  const xl = labels.map((l, i) => i % step === 0 ? `<text class="weather-axis" x="${x(i).toFixed(1)}" y="${H - 18}" text-anchor="middle">${esc(l)}</text>` : '').join('');
+  const dots = temps.length <= 8 ? temps.map((v, i) => `<circle class="weather-temp-dot" r="4" cx="${x(i).toFixed(1)}" cy="${yT(v).toFixed(1)}"/>`).join('') : '';
+  return `<section class="panel weather-chart-panel"><div class="panel-heading"><div><p class="eyebrow">Temperatuur en neerslag</p><h3>${esc(title)}</h3></div></div>
+    <div class="weather-svg-chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(`${title}: ${tempLabel} en ${rainLabel}`)}">${grid}${bars}${tempLow ? line(tempLow, 'weather-min-line') : ''}${line(temps, 'weather-temp-line')}${dots}${xl}
+    <text class="weather-legend" x="${L}" y="${H - 2}">— ${esc(tempLabel)} (°C)</text><text class="weather-legend" x="${W - R}" y="${H - 2}" text-anchor="end">▮ ${esc(rainLabel)}</text></svg></div></section>`;
+}
+function weatherCharts(d) {
+  const day = d.daily, h = d.hourly;
+  let out = weatherChart({
+    title: 'Komende 7 dagen', tempLabel: 'max / min temperatuur', rainLabel: 'neerslag (mm)',
+    labels: day.time.map(t => new Date(`${t}T12:00:00`).toLocaleDateString('nl-NL', { weekday: 'short' })),
+    temps: day.temperature_2m_max, tempLow: day.temperature_2m_min, rain: (day.precipitation_sum || day.time.map(() => 0))
+  });
+  if (h && Array.isArray(h.time) && h.time.length) {
+    const now = Date.now();
+    let start = h.time.findIndex(t => new Date(t).getTime() >= now - 3600e3);
+    if (start < 0) start = 0;
+    const idx = h.time.slice(start, start + 24).map((_, i) => start + i);
+    out += weatherChart({
+      title: 'Komende 24 uur (per uur)', tempLabel: 'temperatuur', rainLabel: 'neerslag (mm)',
+      labels: idx.map(i => `${h.time[i].slice(11, 13)}u`), temps: idx.map(i => h.temperature_2m[i]), rain: idx.map(i => h.precipitation[i])
+    });
+  }
+  return out;
 }
 function weatherMarkup(d) {
   const c = d.current, day = d.daily;
   const days = day.time.map((t, i) => `<li class="list-card"><div><strong>${esc(new Date(`${t}T12:00:00`).toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'short' }))}</strong><small>${esc(weatherLabel(day.weather_code[i]))} · ${Math.round(day.temperature_2m_min[i])}° – ${Math.round(day.temperature_2m_max[i])}° · neerslagkans ${day.precipitation_probability_max[i] ?? 0}%</small></div></li>`).join('');
   return `<p class="weather-now"><strong>${Math.round(c.temperature_2m)}°C</strong> ${esc(weatherLabel(c.weather_code))}</p>
     <p class="muted">Voelt als ${Math.round(c.apparent_temperature)}° · wind ${Math.round(c.wind_speed_10m)} km/u · luchtvochtigheid ${Math.round(c.relative_humidity_2m)}%</p>
+    ${weatherCharts(d)}
     <ul class="data-list">${days}</ul>`;
 }
 async function loadWeather() {
@@ -307,19 +365,33 @@ function itemMarkup(page, item) {
 function listMarkup(page, items = listOf(page)) {
   return `<ul class="data-list task-list">${items.map(i => itemMarkup(page, i)).join('') || `<li class="empty-row">${esc(SECTIONS[page].empty)}</li>`}</ul>`;
 }
+function weatherSummary() {
+  let cache = null;
+  try { cache = JSON.parse(localStorage.getItem(WEATHER_KEY) || 'null'); } catch { cache = null; }
+  const c = cache && cache.key === `${state.weather.lat},${state.weather.lon}` && cache.data && cache.data.current;
+  return c
+    ? `<p class="weather-now"><strong>${Math.round(c.temperature_2m)}°C</strong> ${esc(weatherLabel(c.weather_code))}</p><p class="small-note">Zie de pagina Weer voor grafieken.</p>`
+    : '<p class="quote-note muted">Open eenmaal de pagina Weer om het weer hier te tonen.</p>';
+}
 function renderToday() {
   const open = state.tasks.filter(t => !t.done);
   const a = state.dailyAnswers[todayKey()] || {};
   const date = new Date().toLocaleDateString('nl-NL', { weekday: 'long', day: 'numeric', month: 'long' });
   const q = 'Wat zou vandaag voor jou een fijne dag maken?';
   const who = ['Kees', 'Daphne'].map(p => a[p] ? `<article><strong>${p}</strong><p>${esc(a[p])}</p></article>` : `<button class="button button-secondary button-small" data-answer="${p}">${p} beantwoordt</button>`).join(' ');
-  return `<div class="page-grid">
-    <section class="panel tasks-panel"><div class="panel-heading"><div><p class="eyebrow">${esc(date)}</p><h2>Open taken (${open.length})</h2></div></div>
+  const widgets = {
+    tasks: () => `<section class="panel tasks-panel"><div class="panel-heading"><div><p class="eyebrow">${esc(date)}</p><h2>Open taken (${open.length})</h2></div></div>
       <form class="inline-form" data-quick-task><input name="text" placeholder="Nieuwe taak…" required maxlength="120"><button class="button button-primary">Toevoegen</button></form>
-      ${listMarkup('tasks', open.slice(0, 8))}</section>
-    ${renderQuote()}
-    <section class="panel question-panel"><div class="panel-heading"><div><p class="eyebrow">Even samen stilstaan</p><h2>Vraag van de dag</h2></div><span class="panel-icon">♡</span></div><p>${esc(q)}</p><div class="button-row">${who}</div></section>
-  </div>`;
+      ${listMarkup('tasks', open.slice(0, 8))}</section>`,
+    quote: renderQuote,
+    question: () => `<section class="panel question-panel"><div class="panel-heading"><div><p class="eyebrow">Even samen stilstaan</p><h2>Vraag van de dag</h2></div><span class="panel-icon">♡</span></div><p>${esc(q)}</p><div class="button-row">${who}</div></section>`,
+    weather: () => `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">${esc(state.weather.place)}</p><h2>Weer</h2></div><span class="panel-icon">☀</span></div>${weatherSummary()}</section>`,
+    agenda: () => `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Eerstvolgende afspraken</p><h2>Agenda</h2></div></div>${listMarkup('agenda', state.agenda.filter(i => !i.date || i.date >= todayKey()).slice(0, 5))}</section>`,
+    groceries: () => `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Nog te halen</p><h2>Boodschappen</h2></div></div>${listMarkup('groceries', state.groceries.filter(i => !i.done).slice(0, 8))}</section>`,
+    challenges: () => `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Samen doen</p><h2>Challenges</h2></div></div>${listMarkup('challenges', state.challenges.filter(i => !i.done).slice(0, 5))}</section>`
+  };
+  const html = normalizeDashboard(state.dashboard, state.showQuote).filter(w => w.visible).map(w => widgets[w.id]()).join('');
+  return `<div class="page-grid">${html || '<section class="panel"><p class="muted">Je dashboard is leeg. Kies onderdelen bij Instellingen → Dashboard samenstellen.</p></section>'}</div>`;
 }
 function renderSection(page) {
   const items = listOf(page);
@@ -344,7 +416,9 @@ function renderSettings() {
     <div class="setting-row"><label>Thema <select data-setting="theme">${opt('light', 'Licht', state.theme)}${opt('dark', 'Donker', state.theme)}</select></label></div>
     <div class="setting-row"><label>Uiterlijk <select data-setting="appearance">${opt('normal', 'Normaal', state.appearance)}${opt('minimal', 'Minimalistisch', state.appearance)}</select></label></div>
     <div class="setting-row"><label>Accentkleur <input type="color" data-setting="minimalColor" value="${esc(state.minimalColor)}"></label></div>
-    <div class="setting-row"><label><input type="checkbox" data-setting="showQuote" ${state.showQuote ? 'checked' : ''}> Quote van de dag tonen op Vandaag</label></div>
+    <h3>Dashboard samenstellen</h3>
+    ${normalizeDashboard(state.dashboard, state.showQuote).map((w, i, a) => `<div class="setting-row"><label><input type="checkbox" data-dash-toggle="${w.id}" ${w.visible ? 'checked' : ''}> ${esc(DASH_WIDGETS[w.id])}</label><span><button type="button" class="icon-button" data-dash-move="${w.id}" data-dir="-1" aria-label="Omhoog" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="icon-button" data-dash-move="${w.id}" data-dir="1" aria-label="Omlaag" ${i === a.length - 1 ? 'disabled' : ''}>↓</button></span></div>`).join('')}
+    <div class="setting-row"><button type="button" class="button button-secondary button-small" data-dash-reset>Standaard dashboard herstellen</button></div>
     <p class="small-note">Gegevens worden lokaal in je browser bewaard. Gebruik de knoppen links voor een back-up.</p></section>
     <section class="panel"><div class="panel-heading"><div><p class="eyebrow">Apparaten</p><h2>Synchronisatie (optioneel)</h2></div><span class="panel-icon">${configured ? '✓' : '○'}</span></div>
     <p class="small-note">Standaard blijft alles alleen op dit apparaat. Vul je eigen Supabase-project en een gedeelde geheime huishoudcode in om te synchroniseren. Gegevens worden versleuteld met de huishoudcode voordat ze worden verstuurd.</p>
@@ -482,6 +556,13 @@ function handleClick(e) {
     else if (a === 'export-prices') exportPrices();
     return;
   }
+  const dm = t.closest('[data-dash-move]');
+  if (dm) {
+    const list = normalizeDashboard(state.dashboard, state.showQuote), i = list.findIndex(w => w.id === dm.dataset.dashMove), j = i + Number(dm.dataset.dir);
+    if (i >= 0 && j >= 0 && j < list.length) { [list[i], list[j]] = [list[j], list[i]]; state.dashboard = list; saveState('Opgeslagen'); renderPage('settings'); }
+    return;
+  }
+  if (t.closest('[data-dash-reset]')) { state.dashboard = normalizeDashboard([], true); state.showQuote = true; saveState('Dashboard hersteld'); renderPage('settings'); return; }
   if (t.closest('[data-sync-now]')) { syncNow({ manual: true }); return; }
   if (t.closest('[data-sync-clear]')) { syncConfig = { projectUrl: '', anonKey: '', householdCode: '', lastSyncedAt: '' }; saveSyncConfig(); toast('Synchronisatie uitgezet'); renderPage('settings'); updateSyncBadge(); return; }
   if (t.closest('[data-weather-locate]')) {
@@ -509,7 +590,11 @@ function handleChange(e) {
   } else if (t.matches && t.matches('[data-setting="theme"]')) { state.theme = t.value; applyTheme(); saveState('Opgeslagen'); }
   else if (t.matches && t.matches('[data-setting="appearance"]')) { state.appearance = t.value; applyTheme(); saveState('Opgeslagen'); }
   else if (t.matches && t.matches('[data-setting="minimalColor"]')) { state.minimalColor = t.value; applyTheme(); saveState('Opgeslagen'); }
-  else if (t.matches && t.matches('[data-setting="showQuote"]')) { state.showQuote = t.checked; saveState('Opgeslagen'); }
+  else if (t.matches && t.matches('[data-dash-toggle]')) {
+    state.dashboard = normalizeDashboard(state.dashboard, state.showQuote).map(w => w.id === t.dataset.dashToggle ? { ...w, visible: t.checked } : w);
+    if (t.dataset.dashToggle === 'quote') state.showQuote = t.checked;
+    saveState('Opgeslagen');
+  }
   else if (t.id === 'restoreInput') { importData(t.files && t.files[0]); t.value = ''; }
   else if (t.id === 'priceFileInput') { importPrices(t.files && t.files[0]); t.value = ''; }
 }
