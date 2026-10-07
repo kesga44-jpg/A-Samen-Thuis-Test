@@ -1,6 +1,6 @@
 # Samen Thuis — standalone test v2
 
-Zelfstandige, frameworkloze local-first testversie van Samen Thuis. Geen Supabase, Firebase, externe API's of externe JavaScript-bibliotheken.
+Zelfstandige, frameworkloze local-first testversie van Samen Thuis. Local-first; synchronisatie via Supabase is optioneel en staat standaard uit (Instellingen: project-URL, publishable/anon key en huishoudcode, lokaal bewaard en versleuteld verstuurd). Weer heeft een eigen pagina (Open-Meteo) en de quote komt van de BrainyQuote RSS met lokale cache. Geen externe JavaScript-bibliotheken.
 
 ## Wat is nu uitgevoerd
 
