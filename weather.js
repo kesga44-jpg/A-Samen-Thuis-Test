@@ -1,6 +1,6 @@
 import { fetchWeatherForecast, isWeatherForecast, fetchWithRetry } from './api.js';
 import { renderError } from './rendering.js';
-import { escapeHtml as esc, todayKey } from './utils.js';
+import { escapeHtml as esc } from './utils.js';
 import { getState } from './store.js';
 
 const WEATHER_KEY = 'samenThuisV2-weather';

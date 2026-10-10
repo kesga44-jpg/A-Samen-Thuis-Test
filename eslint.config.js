@@ -9,9 +9,11 @@ export default [{
       TextDecoder: 'readonly',
       TextEncoder: 'readonly',
       DOMParser: 'readonly',
+      File: 'readonly',
       FileReader: 'readonly',
       FormData: 'readonly',
       URL: 'readonly',
+      URLSearchParams: 'readonly',
       atob: 'readonly',
       btoa: 'readonly',
       caches: 'readonly',
@@ -25,7 +27,9 @@ export default [{
       module: 'readonly',
       navigator: 'readonly',
       self: 'readonly',
+      setInterval: 'readonly',
       setTimeout: 'readonly',
+      structuredClone: 'readonly',
       window: 'readonly'
     }
   },
