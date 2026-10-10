@@ -1,7 +1,7 @@
 import { fetchQuoteFeed, fetchWeatherForecast, isWeatherForecast } from './api.js';
 import { bindHandlers } from './handlers.js';
 import { renderCollection, renderError } from './rendering.js';
-import { defaultState, loadState, mergeState, normalizeDashboard, persistState } from './state.js';
+import { defaultState, loadState, mergeState, normalizeDashboard, persistState, LEGACY_WIDGETS } from './state.js';
 import { escapeHtml as esc, todayKey, uid } from './utils.js';
 
 const QUOTE_KEY = 'samenThuisV2-quote';
@@ -347,7 +347,7 @@ function renderToday() {
     groceries: () => `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Nog te halen</p><h2>Boodschappen</h2></div></div>${listMarkup('groceries', state.groceries.filter(i => !i.done).slice(0, 8))}</section>`,
     challenges: () => `<section class="panel"><div class="panel-heading"><div><p class="eyebrow">Samen doen</p><h2>Challenges</h2></div></div>${listMarkup('challenges', state.challenges.filter(i => !i.done).slice(0, 5))}</section>`
   };
-  const html = normalizeDashboard(state.dashboard, state.showQuote).filter(w => w.visible).map(w => widgets[w.id]()).join('');
+  const html = normalizeDashboard(state.dashboard, state.showQuote).filter(w => w.visible && LEGACY_WIDGETS.includes(w.id)).map(w => widgets[w.id]()).join('');
   return `<div class="page-grid">${html || '<section class="panel"><p class="muted">Je dashboard is leeg. Kies onderdelen bij Instellingen → Dashboard samenstellen.</p></section>'}</div>`;
 }
 function renderSection(page) {
